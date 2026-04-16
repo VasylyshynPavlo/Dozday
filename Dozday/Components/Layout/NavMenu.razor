@@ -6,6 +6,7 @@
 @implements IDisposable
 
 <div class="nav-menu @(_isMenuOpen ? "nav-menu--open" : string.Empty)">
+    <div class="nav-menu__current-page">@GetCurrentPageTitle()</div>
     <button type="button" class="nav-menu__burger" @onclick="ToggleMenu" aria-expanded="@_isMenuOpen" aria-label="Меню">☰</button>
 
     <div class="nav-menu__items">
@@ -72,10 +73,42 @@
 
     private bool IsActive(string page)
     {
-        var relativePath = Navigation.ToBaseRelativePath(Navigation.Uri).Trim('/').ToLowerInvariant();
+        var relativePath = GetRelativePath();
         return page == "calendar"
             ? string.IsNullOrWhiteSpace(relativePath) || relativePath == "calendar"
             : relativePath.Contains(page);
+    }
+
+    private string GetCurrentPageTitle()
+    {
+        var relativePath = GetRelativePath();
+
+        if (string.IsNullOrWhiteSpace(relativePath) || relativePath == "calendar")
+        {
+            return "Календар";
+        }
+
+        if (relativePath.Contains("teachers"))
+        {
+            return "Викладачі";
+        }
+
+        if (relativePath.Contains("help"))
+        {
+            return "Допомога";
+        }
+
+        if (relativePath.Contains("admin-panel"))
+        {
+            return "Панель адміністратора";
+        }
+
+        return "Dozday";
+    }
+
+    private string GetRelativePath()
+    {
+        return Navigation.ToBaseRelativePath(Navigation.Uri).Trim('/').ToLowerInvariant();
     }
 
     private async Task LoadUserFromTokenAsync()

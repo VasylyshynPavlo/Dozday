@@ -1,1 +1,299 @@
-<div class="calendar-day"></div>
+@using System.Globalization
+@using Dozday.Core.Enums
+@using Dozday.Core.Models
+@using Microsoft.AspNetCore.Components
+@implements IDisposable
+
+<div class="calendar-day">
+    @for (var minuteOffset = 0; minuteOffset <= MinutesInDayRange; minuteOffset += 60)
+    {
+        var column = minuteOffset == MinutesInDayRange
+            ? minuteOffset + SideBufferColumn
+            : minuteOffset + SideBufferColumn + 1;
+
+        <div class="grid-vertical-lines" style="@($"grid-column: {column}; grid-row: 2;")"></div>
+    }
+
+    @for (var hour = DayStartHour; hour <= DayEndHour; hour++)
+    {
+        var minuteOffset = (hour - DayStartHour) * 60;
+        var column = minuteOffset + SideBufferColumn + 1;
+        <div class="time-label" style="@($"grid-row: 1; grid-column: {column};")">@($"{hour:00}:00")</div>
+    }
+
+    @if (currentTimeColumnStart is not null)
+    {
+        <div class="current-time-line" style="@($"grid-column: {currentTimeColumnStart.Value}; grid-row: 1 / -1;")"></div>
+    }
+
+    <div class="grid-horizontal-lines" style="grid-column: 1 / -1; grid-row: 2;"></div>
+
+    @foreach (var viewEvent in dayEventViews)
+    {
+        <button type="button" class="event" style="@viewEvent.Style" @onclick="() => OpenEventDetails(viewEvent)">
+            <div class="event__header">
+                <span class="event__format" title="@GetEventTypeLabel(viewEvent.Event.Type)">@GetEventTypeIcon(viewEvent.Event.Type)</span>
+                <span class="event__title">@viewEvent.Event.Summary</span>
+            </div>
+            <div class="event__time">@viewEvent.TimeText</div>
+        </button>
+    }
+
+    @if (selectedEventView is not null)
+    {
+        <div class="event-details-backdrop" @onclick="CloseEventDetails">
+            <div class="event-details" style="@GetEventDetailsStyle(selectedEventView)" @onclick:stopPropagation="true">
+                <button type="button" class="event-details__close" @onclick="CloseEventDetails">✕</button>
+                <h3 class="event-details__title">@selectedEventView.Event.Summary</h3>
+                <div class="event-details__row"><strong>Формат:</strong> @GetEventTypeLabel(selectedEventView.Event.Type)</div>
+                <div class="event-details__row"><strong>Початок:</strong> @selectedEventView.Event.Start.ToString("dd.MM.yyyy HH:mm", culture)</div>
+                <div class="event-details__row"><strong>Кінець:</strong> @selectedEventView.Event.End.ToString("dd.MM.yyyy HH:mm", culture)</div>
+                @if (!string.IsNullOrWhiteSpace(selectedEventView.Event.Loacation))
+                {
+                    <div class="event-details__row"><strong>Локація:</strong> @selectedEventView.Event.Loacation</div>
+                }
+                @if (!string.IsNullOrWhiteSpace(selectedEventView.Event.Description))
+                {
+                    <div class="event-details__row"><strong>Опис:</strong> @selectedEventView.Event.Description</div>
+                }
+                @if (!string.IsNullOrWhiteSpace(selectedEventView.Event.MeetingLink))
+                {
+                    <div class="event-details__row"><a href="@selectedEventView.Event.MeetingLink" target="_blank" rel="noopener noreferrer">Посилання на зустріч</a></div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private const int DayStartHour = 8;
+    private const int DayEndHour = 22;
+    private const int MinutesInDayRange = (DayEndHour - DayStartHour) * 60;
+    private const int SideBufferColumn = 1;
+
+    [Parameter]
+    public DateOnly Day { get; set; } = DateOnly.FromDateTime(DateTime.Now);
+
+    private int? currentTimeColumnStart;
+    private PeriodicTimer? timeTicker;
+    private CancellationTokenSource? timeTickerCts;
+    private readonly CultureInfo culture = new("uk-UA");
+    private readonly List<Event> events = [];
+    private readonly List<DayEventView> dayEventViews = [];
+    private DayEventView? selectedEventView;
+
+    protected override void OnInitialized()
+    {
+        BuildTestEvents();
+        BuildDayEventViews();
+        UpdateCurrentTimeIndicator();
+        _ = StartTimeTickerAsync();
+    }
+
+    protected override void OnParametersSet()
+    {
+        BuildTestEvents();
+        BuildDayEventViews();
+        UpdateCurrentTimeIndicator();
+    }
+
+    private void BuildTestEvents()
+    {
+        events.Clear();
+
+        events.Add(new Event
+        {
+            Id = Guid.Parse("4f8d3f2a-6529-40cd-ab67-73383a63cf5a"),
+            Summary = "Щоденний стендап",
+            Start = new DateTime(2026, 4, 16, 9, 0, 0),
+            End = new DateTime(2026, 4, 16, 9, 45, 0),
+            Description = "Синхронізація команди",
+            Loacation = "Zoom",
+            MeetingLink = "https://example.com/standup",
+            Type = EventType.Online
+        });
+
+        events.Add(new Event
+        {
+            Id = Guid.Parse("fc164e0b-970b-442d-889d-e95a6f1ab3db"),
+            Summary = "Планування спринту",
+            Start = new DateTime(2026, 4, 16, 10, 0, 0),
+            End = new DateTime(2026, 4, 17, 11, 30, 0),
+            Description = "Оцінка задач",
+            Loacation = "Переговорна #2",
+            Type = EventType.Offline
+        });
+
+        events.Add(new Event
+        {
+            Id = Guid.Parse("b12f5bc4-6953-4752-94ca-6f9068f51478"),
+            Summary = "Демо з клієнтом",
+            Start = new DateTime(2026, 4, 16, 15, 15, 0),
+            End = new DateTime(2026, 4, 16, 16, 0, 0),
+            Description = "Показ інкременту",
+            Loacation = "Teams",
+            MeetingLink = "https://example.com/demo",
+            Type = EventType.Hybrid
+        });
+    }
+
+    private void BuildDayEventViews()
+    {
+        dayEventViews.Clear();
+
+        var dayStart = Day.ToDateTime(new TimeOnly(DayStartHour, 0));
+        var dayEnd = Day.ToDateTime(new TimeOnly(DayEndHour, 0));
+
+        var rowIndex = 0;
+
+        foreach (var calendarEvent in events.OrderBy(x => x.Start))
+        {
+            if (calendarEvent.End <= calendarEvent.Start)
+            {
+                continue;
+            }
+
+            var eventStartDate = DateOnly.FromDateTime(calendarEvent.Start);
+            var eventEndDate = DateOnly.FromDateTime(calendarEvent.End);
+            if (Day < eventStartDate || Day > eventEndDate)
+            {
+                continue;
+            }
+
+            var segmentStart = calendarEvent.Start > dayStart ? calendarEvent.Start : dayStart;
+            var segmentEnd = calendarEvent.End < dayEnd ? calendarEvent.End : dayEnd;
+
+            if (segmentEnd <= segmentStart)
+            {
+                continue;
+            }
+
+            var startMinute = Math.Clamp((int)(segmentStart - dayStart).TotalMinutes, 0, MinutesInDayRange);
+            var endMinute = Math.Clamp((int)Math.Ceiling((segmentEnd - dayStart).TotalMinutes), 0, MinutesInDayRange);
+            if (endMinute <= startMinute)
+            {
+                endMinute = Math.Min(MinutesInDayRange, startMinute + 1);
+            }
+
+            var columnStart = SideBufferColumn + 1 + startMinute;
+            var columnEnd = SideBufferColumn + 1 + endMinute;
+
+            dayEventViews.Add(new DayEventView(
+                calendarEvent,
+                $"{segmentStart:HH:mm} • {segmentEnd:HH:mm}",
+                BuildEventStyle(calendarEvent, columnStart, columnEnd, rowIndex)));
+
+            rowIndex++;
+        }
+    }
+
+    private void UpdateCurrentTimeIndicator()
+    {
+        var now = DateTime.Now;
+
+        if (DateOnly.FromDateTime(now) != Day)
+        {
+            currentTimeColumnStart = null;
+            return;
+        }
+
+        var currentMinute = now.Hour * 60 + now.Minute - DayStartHour * 60;
+
+        if (currentMinute < 0 || currentMinute > MinutesInDayRange)
+        {
+            currentTimeColumnStart = null;
+            return;
+        }
+
+        currentTimeColumnStart = SideBufferColumn + 1 + currentMinute;
+    }
+
+    private static string GetEventTypeIcon(EventType type) => type switch
+    {
+        EventType.Online => "🌐",
+        EventType.Offline => "📍",
+        EventType.Hybrid => "🔀",
+        _ => "📅"
+    };
+
+    private static string GetEventTypeLabel(EventType type) => type switch
+    {
+        EventType.Online => "Онлайн",
+        EventType.Offline => "Очно",
+        EventType.Hybrid => "Онлайн + Очно",
+        _ => "None"
+    };
+
+    private void OpenEventDetails(DayEventView viewEvent)
+    {
+        selectedEventView = viewEvent;
+    }
+
+    private void CloseEventDetails()
+    {
+        selectedEventView = null;
+    }
+
+    private static string BuildEventStyle(Event calendarEvent, int columnStart, int columnEnd, int rowIndex)
+    {
+        var hash = calendarEvent.Id != Guid.Empty
+            ? calendarEvent.Id.GetHashCode()
+            : HashCode.Combine(calendarEvent.Summary, calendarEvent.Start, calendarEvent.End);
+
+        if (hash == int.MinValue)
+        {
+            hash = int.MaxValue;
+        }
+
+        var baseHue = Math.Abs(hash) % 360;
+
+        return $"grid-column: {columnStart} / {columnEnd}; " +
+               "grid-row: 2; " +
+               $"--event-row-index: {rowIndex}; " +
+               $"background-color: hsl({baseHue} 85% 93%); " +
+               $"border-left-color: hsl({(baseHue + 18) % 360} 70% 45%); " +
+               $"color: hsl({(baseHue + 30) % 360} 70% 22%);";
+    }
+
+    private static string GetEventDetailsStyle(DayEventView viewEvent)
+    {
+        var hash = viewEvent.Event.Id != Guid.Empty
+            ? viewEvent.Event.Id.GetHashCode()
+            : HashCode.Combine(viewEvent.Event.Summary, viewEvent.Event.Start, viewEvent.Event.End);
+
+        if (hash == int.MinValue)
+        {
+            hash = int.MaxValue;
+        }
+
+        var baseHue = Math.Abs(hash) % 360;
+        return $"border-top: 6px solid hsl({(baseHue + 18) % 360} 70% 45%); background-color: hsl({baseHue} 85% 93%); color: hsl({(baseHue + 30) % 360} 70% 22%);";
+    }
+
+    private async Task StartTimeTickerAsync()
+    {
+        timeTickerCts = new CancellationTokenSource();
+        timeTicker = new PeriodicTimer(TimeSpan.FromSeconds(15));
+
+        try
+        {
+            while (await timeTicker.WaitForNextTickAsync(timeTickerCts.Token))
+            {
+                UpdateCurrentTimeIndicator();
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    public void Dispose()
+    {
+        timeTickerCts?.Cancel();
+        timeTicker?.Dispose();
+        timeTickerCts?.Dispose();
+    }
+
+    private sealed record DayEventView(Event Event, string TimeText, string Style);
+}

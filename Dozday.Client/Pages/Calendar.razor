@@ -27,10 +27,10 @@
             @switch (calendarMode)
             {
                 case 0:
-                    <CalendarDay />
+                    <CalendarDay Day="selectedDay" />
                     break;
                 case 1:
-                    <CalendarWeek WeekStart="selectedFrom" />
+                    <CalendarWeek WeekStart="selectedWeekStart" />
                     break;
                 case 2:
                     <CalendarMonth />
@@ -44,8 +44,10 @@
     private int calendarMode = 1;
     private readonly DateOnly now = DateOnly.FromDateTime(DateTime.Now);
     private readonly CultureInfo culture = new("uk-UA");
-    private DateOnly selectedFrom;
-    private DateOnly selectedTo;
+    private DateOnly selectedDay;
+    private DateOnly selectedWeekStart;
+    private DateOnly selectedWeekEnd;
+    private DateOnly selectedMonth;
     private bool isControlsMenuOpen;
 
     private string CalendarTitle
@@ -54,35 +56,25 @@
         {
             return calendarMode switch
             {
+                0 => selectedDay.ToString("dddd dd, MMMM yyyy", culture),
                 1 => GetWeekTitle(),
-                _ => $"{selectedFrom.ToString("MMMM", culture)}, {selectedFrom.Year}"
+                _ => $"{selectedMonth.ToString("MMMM", culture)}, {selectedMonth.Year}"
             };
         }
     }
 
     protected override void OnInitialized()
     {
-        selectedFrom = GetWeekStart(now);
-        selectedTo = selectedFrom.AddDays(6);
+        selectedDay = now;
+        selectedWeekStart = GetWeekStart(now);
+        selectedWeekEnd = selectedWeekStart.AddDays(6);
+        selectedMonth = new DateOnly(now.Year, now.Month, 1);
     }
 
     private void SetCalendarMode(int mode)
     {
         calendarMode = mode;
         isControlsMenuOpen = false;
-
-        switch (calendarMode)
-        {
-            case 0:
-                selectedTo = selectedFrom;
-                break;
-            case 1:
-                selectedTo = selectedFrom.AddDays(6);
-                break;
-            case 2:
-                selectedTo = selectedFrom;
-                break;
-        }
     }
 
     private void ToggleControlsMenu()
@@ -97,16 +89,14 @@
         switch (calendarMode)
         {
             case 0:
-                selectedFrom = today;
-                selectedTo = today;
+                selectedDay = today;
                 break;
             case 1:
-                selectedFrom = GetWeekStart(today);
-                selectedTo = selectedFrom.AddDays(6);
+                selectedWeekStart = GetWeekStart(today);
+                selectedWeekEnd = selectedWeekStart.AddDays(6);
                 break;
             case 2:
-                selectedFrom = new DateOnly(today.Year, today.Month, 1);
-                selectedTo = selectedFrom;
+                selectedMonth = new DateOnly(today.Year, today.Month, 1);
                 break;
         }
 
@@ -118,16 +108,14 @@
         switch (calendarMode)
         {
             case 0:
-                selectedFrom = selectedFrom.AddDays(-1);
-                selectedTo = selectedFrom;
+                selectedDay = selectedDay.AddDays(-1);
                 break;
             case 1:
-                selectedFrom = selectedFrom.AddDays(-7);
-                selectedTo = selectedFrom.AddDays(6);
+                selectedWeekStart = selectedWeekStart.AddDays(-7);
+                selectedWeekEnd = selectedWeekStart.AddDays(6);
                 break;
             case 2:
-                selectedFrom = selectedFrom.AddMonths(-1);
-                selectedTo = selectedFrom;
+                selectedMonth = selectedMonth.AddMonths(-1);
                 break;
         }
     }
@@ -137,29 +125,27 @@
         switch (calendarMode)
         {
             case 0:
-                selectedFrom = selectedFrom.AddDays(1);
-                selectedTo = selectedFrom;
+                selectedDay = selectedDay.AddDays(1);
                 break;
             case 1:
-                selectedFrom = selectedFrom.AddDays(7);
-                selectedTo = selectedFrom.AddDays(6);
+                selectedWeekStart = selectedWeekStart.AddDays(7);
+                selectedWeekEnd = selectedWeekStart.AddDays(6);
                 break;
             case 2:
-                selectedFrom = selectedFrom.AddMonths(1);
-                selectedTo = selectedFrom;
+                selectedMonth = selectedMonth.AddMonths(1);
                 break;
         }
     }
 
     private string GetWeekTitle()
     {
-        var monthPart = selectedFrom.Month == selectedTo.Month && selectedFrom.Year == selectedTo.Year
-            ? selectedFrom.ToString("MMMM", culture)
-            : $"{selectedFrom.ToString("MMMM", culture)}-{selectedTo.ToString("MMMM", culture)}";
+        var monthPart = selectedWeekStart.Month == selectedWeekEnd.Month && selectedWeekStart.Year == selectedWeekEnd.Year
+            ? selectedWeekStart.ToString("MMMM", culture)
+            : $"{selectedWeekStart.ToString("MMMM", culture)}-{selectedWeekEnd.ToString("MMMM", culture)}";
 
-        var yearPart = selectedFrom.Year == selectedTo.Year
-            ? selectedFrom.Year.ToString(CultureInfo.InvariantCulture)
-            : $"{selectedFrom.Year.ToString(CultureInfo.InvariantCulture)}-{selectedTo.Year.ToString(CultureInfo.InvariantCulture)}";
+        var yearPart = selectedWeekStart.Year == selectedWeekEnd.Year
+            ? selectedWeekStart.Year.ToString(CultureInfo.InvariantCulture)
+            : $"{selectedWeekStart.Year.ToString(CultureInfo.InvariantCulture)}-{selectedWeekEnd.Year.ToString(CultureInfo.InvariantCulture)}";
 
         return $"{monthPart}, {yearPart}";
     }

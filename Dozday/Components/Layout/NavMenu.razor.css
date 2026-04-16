@@ -22,6 +22,10 @@
     color: #15386c;
 }
 
+.nav-menu__current-page {
+    display: none;
+}
+
 .nav-menu__items {
     flex: 1 1 0;
     align-self: stretch;
@@ -113,6 +117,20 @@
         flex-wrap: wrap;
         height: 50px;
         align-items: stretch;
+    }
+
+    .nav-menu__current-page {
+        display: flex;
+        align-items: center;
+        min-width: 0;
+        padding: 0 12px;
+        color: #15386c;
+        font-family: Inter, sans-serif;
+        font-size: 16px;
+        font-weight: 600;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
     }
 
     .nav-menu__burger {
