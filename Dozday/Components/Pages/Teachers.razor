@@ -1,0 +1,245 @@
+﻿@page "/teachers"
+@using System.IdentityModel.Tokens.Jwt
+@using System.Security.Claims
+@using Dozday.Core.DTOs
+@using Dozday.Core.Interfaces
+@inject IUserService userService
+@attribute [StreamRendering]
+@inject IJSRuntime JS
+
+<PageTitle>Викладачі</PageTitle>
+
+<div class="teachers-bg">
+    <div class="teachers-body">
+        <form class="search" @onsubmit="HandleSearch" @onsubmit:preventDefault>
+            <input type="text"
+                   class="searchTerm"
+                   placeholder="Введіть ім'я або прізвище викладача"
+                   @bind="searchTerm"
+                   @bind:event="oninput"/>
+            <button type="submit" class="searchButton">
+                <span>Знайти</span>
+            </button>
+        </form>
+        <div class="search-result">
+            @foreach (var t in teachers)
+            {
+                <div class="search-result--block">
+                    <div class="search-result--block--avatar">
+                        <img src="@GetAvatarUrl(t.Item1.AvatarUrl)"
+                             alt="Avatar"
+                             referrerpolicy="no-referrer"
+                             onerror="this.onerror=null;this.src='https://placehold.co/100?text=Avatar';"/>
+                    </div>
+                    <p>
+                        @t.Item1.FullName
+                    </p>
+                    <button type="button"
+                            class="search-result--block--button @(t.Item2 ? "search-result--block--button--subed" : "") {}"
+                            @onclick="() => ChangeSubStatusAsync(t.Item2, t.Item1.Id)">
+                        @if (t.Item2)
+                        {
+                            <p>Не слідкувати</p>
+                        }
+                        else
+                        {
+                            <p>Слідкувати</p>
+                        }
+                    </button>
+                </div>
+            }
+        </div>
+
+        @if (totalPages > 1)
+        {
+            <div class="search-pagination">
+                <button type="button" class="search-pagination__arrow" @onclick="() => GoToPageAsync(page - 1)"
+                        disabled="@(page <= 1)">&#8592;
+                </button>
+
+                @foreach (var pageNumber in GetVisiblePages())
+                {
+                    <button type="button"
+                            class="search-pagination__page @(pageNumber == page ? "search-pagination__page--active" : string.Empty)"
+                            @onclick="() => GoToPageAsync(pageNumber)">
+                        @pageNumber
+                    </button>
+                }
+
+                <button type="button" class="search-pagination__arrow" @onclick="() => GoToPageAsync(page + 1)"
+                        disabled="@(page >= totalPages)">&#8594;
+                </button>
+            </div>
+        }
+
+        @if (_isLoading)
+        {
+            <div class="teachers-loading-overlay">
+                <LoadingIndicator/>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private const string DefaultAvatarUrl = "https://placehold.co/100?text=Avatar";
+    private List<(UserIdNameAvatarDto, bool)> teachers = [];
+    string searchTerm = string.Empty;
+    int page = 1;
+    readonly int pageSize = 10;
+    int totalPages = -1;
+    private string? currentUserId;
+    private bool _isLoading;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        await InitializeUserAsync();
+        await LoadTeachersAsync();
+        StateHasChanged();
+    }
+
+    private async Task HandleSearch()
+    {
+        page = 1;
+        await LoadTeachersAsync();
+    }
+
+    private async Task GoToPageAsync(int targetPage)
+    {
+        if (targetPage < 1 || (totalPages > 0 && targetPage > totalPages) || targetPage == page)
+        {
+            return;
+        }
+
+        page = targetPage;
+        await LoadTeachersAsync();
+    }
+
+    private async Task LoadTeachersAsync()
+    {
+        _isLoading = true;
+        await InvokeAsync(StateHasChanged);
+
+        if (string.IsNullOrWhiteSpace(currentUserId))
+        {
+            teachers = [];
+            totalPages = -1;
+            _isLoading = false;
+            return;
+        }
+
+        try
+        {
+            var query = string.IsNullOrWhiteSpace(searchTerm) ? string.Empty : searchTerm.Trim();
+            var result = await userService.GetTeacherShortIfoWithSubStatusAsync(currentUserId, page, pageSize, query);
+            teachers = result.Items;
+            totalPages = result.TotalCount <= pageSize ? -1 : result.TotalPages;
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private static string GetAvatarUrl(string? avatarUrl)
+    {
+        if (string.IsNullOrWhiteSpace(avatarUrl))
+        {
+            return DefaultAvatarUrl;
+        }
+
+        var normalized = avatarUrl.Trim().Trim('"');
+        return Uri.TryCreate(normalized, UriKind.Absolute, out var uri)
+               && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps)
+            ? normalized
+            : DefaultAvatarUrl;
+    }
+
+    private async Task InitializeUserAsync()
+    {
+        var token = await JS.InvokeAsync<string?>("auth.getToken");
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            currentUserId = null;
+            return;
+        }
+
+        try
+        {
+            var jwt = new JwtSecurityTokenHandler().ReadJwtToken(token);
+            currentUserId = jwt.Claims.FirstOrDefault(c =>
+                c.Type == ClaimTypes.NameIdentifier ||
+                c.Type == JwtRegisteredClaimNames.NameId ||
+                c.Type == "nameid" ||
+                c.Type == JwtRegisteredClaimNames.Sub ||
+                c.Type == "sub")?.Value;
+        }
+        catch
+        {
+            currentUserId = null;
+        }
+    }
+
+    private IEnumerable<int> GetVisiblePages()
+    {
+        if (totalPages <= 1)
+        {
+            return [];
+        }
+
+        var pages = new SortedSet<int> { page, totalPages };
+
+        if (page > 1)
+        {
+            pages.Add(page - 1);
+        }
+
+        if (page + 1 <= totalPages)
+        {
+            pages.Add(page + 1);
+        }
+
+        if (page + 2 <= totalPages)
+        {
+            pages.Add(page + 2);
+        }
+
+        return pages;
+    }
+
+    private async Task ChangeSubStatusAsync(bool sub, string teacherId)
+    {
+        if (string.IsNullOrWhiteSpace(currentUserId)) return;
+        _isLoading = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            if (sub)
+            {
+                await userService.UnSubscribeUserAsync(currentUserId, teacherId);
+            }
+            else
+            {
+                await userService.SubscribeUserAsync(currentUserId, teacherId);
+            }
+
+            var teacherIndex = teachers.FindIndex(t => t.Item1.Id.ToString() == teacherId);
+            if (teacherIndex >= 0)
+            {
+                var current = teachers[teacherIndex];
+                teachers[teacherIndex] = (current.Item1, !current.Item2);
+            }
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+}

@@ -1,0 +1,91 @@
+.login-bg {
+    position: relative;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: url("/icons/BackgroundPattern.jpg") lightgray 0% 0% / 300px 300px repeat;
+}
+
+.login-loading-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 2000;
+    background: rgba(255, 255, 255, 0.65);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.login-card {
+    background: #fff;
+    border-radius: 8px;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.10);
+    width: 420px;
+    overflow: hidden;
+}
+
+.login-card_header {
+    padding: 0px 0px;
+    border-bottom: 1px solid #e5e9ef;
+    background: #fff;
+}
+
+.login-card_logo-img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+}
+
+.login-card_body {
+    padding: 24px;
+}
+
+.login-card_title {
+    font-size: 24px;
+    font-weight: 600;
+    color: #1a1a1a;
+    margin-bottom: 18px;
+    line-height: 1.5;
+}
+
+.login-google-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    width: 100%;
+    padding: 10px 16px;
+    border: 1px solid #dadce0;
+    border-radius: 6px;
+    background: #fff;
+    font-size: 15px;
+    font-weight: 500;
+    color: #1a1a1a;
+    cursor: pointer;
+    transition: background 0.15s, box-shadow 0.15s;
+}
+
+.login-google-btn:hover {
+    background: #f8f9fa;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+}
+
+.login-google-btn_icon {
+    flex-shrink: 0;
+}
+
+.login-card_hint {
+    margin-top: 18px;
+    font-size: 18px;
+    color: #444;
+    line-height: 1.6;
+}
+
+.login-card_hint p {
+    margin-bottom: 6px;
+}
+
+.login-card_hint p:last-child {
+    margin-bottom: 0;
+}

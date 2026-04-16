@@ -1,0 +1,139 @@
+@page "/auth"
+@layout EmptyLayout
+@rendermode InteractiveServer
+@inject IAuthService AuthService
+@inject IOptions<GoogleAuthOptions> GoogleAuthOptions
+@inject IJSRuntime JS
+@inject NavigationManager Navigation
+@using Dozday.Core.Interfaces
+@using Dozday.Core.Models
+@using Microsoft.Extensions.Options
+@implements IAsyncDisposable
+
+<PageTitle>Вхід — Dozday</PageTitle>
+
+<div class="login-bg">
+    <div class="login-card">
+        <div class="login-card_header">
+            <img src="icons/LogoWithTextBlueSvg.svg" alt="НУВГП" class="login-card_logo-img"/>
+        </div>
+
+        <div class="login-card_body">
+            <p class="login-card_title">Увійдіть, використовуючи свій<br/>обліковий запис на:</p>
+
+            <button class="login-google-btn" type="button" @onclick="StartGoogleLoginAsync">
+                <img class="login-google-btn_icon" src="/icons/Google_G_logo.png" width="20" height="20"/>
+                <span>Google</span>
+            </button>
+
+            @if (!string.IsNullOrWhiteSpace(_errorMessage))
+            {
+                <p class="text-danger mt-3">@_errorMessage</p>
+            }
+
+            <div class="login-card_hint">
+                <p>Для авторизації використовуйте кнопку <strong>Google</strong>.</p>
+                <p>Дозволено вхід лише з акаунтів корпоративної пошти НУВГП у домені <strong>nuwm.edu.ua</strong>.</p>
+            </div>
+
+            @if (_isLoginInProgress)
+            {
+                <div class="login-loading-overlay">
+                    <LoadingIndicator/>
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private DotNetObjectReference<Auth>? _dotNetRef;
+    private string? _errorMessage;
+    private bool _isLoginInProgress;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        var existingToken = await JS.InvokeAsync<string?>("auth.getToken");
+        if (!string.IsNullOrWhiteSpace(existingToken))
+        {
+            Navigation.NavigateTo("/", true);
+            return;
+        }
+
+        var clientId = GoogleAuthOptions.Value.SecretKey;
+        if (string.IsNullOrWhiteSpace(clientId))
+        {
+            _errorMessage = "Google Client ID не налаштований.";
+            StateHasChanged();
+            return;
+        }
+
+        _dotNetRef = DotNetObjectReference.Create(this);
+    }
+
+    private async Task StartGoogleLoginAsync()
+    {
+        try
+        {
+            _errorMessage = null;
+            var clientId = GoogleAuthOptions.Value.SecretKey;
+            if (string.IsNullOrWhiteSpace(clientId))
+            {
+                _errorMessage = "Google Client ID не налаштований.";
+                return;
+            }
+
+            if (_dotNetRef is null)
+            {
+                _dotNetRef = DotNetObjectReference.Create(this);
+            }
+
+            await JS.InvokeVoidAsync("auth.requestGoogleAccessToken", clientId, _dotNetRef);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Не вдалося відкрити Google авторизацію: {ex.Message}";
+            StateHasChanged();
+        }
+    }
+
+    [JSInvokable]
+    public async Task HandleGoogleCredential(string idToken, string accessToken)
+    {
+        _isLoginInProgress = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var token = await AuthService.LoginWithGoogleAsync(idToken, accessToken);
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                _errorMessage = "Не вдалося виконати вхід.";
+                _isLoginInProgress = false;
+                StateHasChanged();
+                return;
+            }
+
+            await JS.InvokeVoidAsync("auth.setToken", token);
+            Navigation.NavigateTo("/", true);
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Помилка входу через Google: {ex.Message}";
+            _isLoginInProgress = false;
+            StateHasChanged();
+        }
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        _dotNetRef?.Dispose();
+        return ValueTask.CompletedTask;
+    }
+
+}

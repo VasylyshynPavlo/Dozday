@@ -1,0 +1,132 @@
+﻿@inject NavigationManager Navigation
+@inject IJSRuntime JS
+@using System.IdentityModel.Tokens.Jwt
+@using System.Security.Claims
+@using Dozday.Core.Enums
+@implements IDisposable
+
+<div class="nav-menu @(_isMenuOpen ? "nav-menu--open" : string.Empty)">
+    <button type="button" class="nav-menu__burger" @onclick="ToggleMenu" aria-expanded="@_isMenuOpen" aria-label="Меню">☰</button>
+
+    <div class="nav-menu__items">
+        <a href="/calendar" class="nav-menu__item @(IsActive("calendar") ? "nav-menu__item--active" : string.Empty)">
+            <div class="nav-menu__label @(IsActive("calendar") ? "nav-menu__label--active" : string.Empty)">Календар
+            </div>
+        </a>
+        <a href="/teachers" class="nav-menu__item @(IsActive("teachers") ? "nav-menu__item--active" : string.Empty)">
+            <div class="nav-menu__label @(IsActive("teachers") ? "nav-menu__label--active" : string.Empty)">Викладачі
+            </div>
+        </a>
+        <a href="/help" class="nav-menu__item @(IsActive("help") ? "nav-menu__item--active" : string.Empty)">
+            <div class="nav-menu__label @(IsActive("help") ? "nav-menu__label--active" : string.Empty)">Допомога</div>
+        </a>
+        @if (_isAdmin)
+        {
+            <a href="/admin/admin-panel"
+               class="nav-menu__item @(IsActive("admin-panel") ? "nav-menu__item--active" : string.Empty)">
+                <div class="nav-menu__label @(IsActive("admin-panel") ? "nav-menu__label--active" : string.Empty)">
+                    Панель адміністратора
+                </div>
+            </a>
+        }
+    </div>
+
+    <div class="nav-menu__item nav-menu__account">
+        <img class="nav-menu__avatar" src="@_avatarUrl" alt="Avatar"/>
+        <button type="button" class="nav-menu__logout-btn" @onclick="LogoutAsync">Вийти</button>
+    </div>
+</div>
+
+@code {
+    private const string DefaultAvatarUrl = "https://placehold.co/100?text=Placeholder&font=roboto";
+    private string _avatarUrl = DefaultAvatarUrl;
+    private bool _isAdmin;
+    private bool _isMenuOpen;
+
+    protected override void OnInitialized()
+    {
+        Navigation.LocationChanged += OnLocationChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        await LoadUserFromTokenAsync();
+        StateHasChanged();
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        _isMenuOpen = false;
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void ToggleMenu()
+    {
+        _isMenuOpen = !_isMenuOpen;
+    }
+
+    private bool IsActive(string page)
+    {
+        var relativePath = Navigation.ToBaseRelativePath(Navigation.Uri).Trim('/').ToLowerInvariant();
+        return page == "calendar"
+            ? string.IsNullOrWhiteSpace(relativePath) || relativePath == "calendar"
+            : relativePath.Contains(page);
+    }
+
+    private async Task LoadUserFromTokenAsync()
+    {
+        var token = await JS.InvokeAsync<string?>("auth.getToken");
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            _avatarUrl = DefaultAvatarUrl;
+            _isAdmin = false;
+            return;
+        }
+
+        try
+        {
+            var jwt = new JwtSecurityTokenHandler().ReadJwtToken(token);
+            _avatarUrl = jwt.Claims.FirstOrDefault(c => c.Type == "avatar")?.Value ?? DefaultAvatarUrl;
+            var roleClaim = jwt.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role || c.Type == "role" || c.Type == "roles");
+            _isAdmin = IsAdministrator(roleClaim?.Value);
+        }
+        catch
+        {
+            _avatarUrl = DefaultAvatarUrl;
+            _isAdmin = false;
+        }
+    }
+
+    private async Task LogoutAsync()
+    {
+        await JS.InvokeVoidAsync("auth.clearToken");
+        Navigation.NavigateTo("/auth", true);
+    }
+
+    public void Dispose()
+    {
+        Navigation.LocationChanged -= OnLocationChanged;
+    }
+
+    private static bool IsAdministrator(string? roleValue)
+    {
+        if (string.IsNullOrWhiteSpace(roleValue))
+        {
+            return false;
+        }
+
+        if (Enum.TryParse<UserRoles>(roleValue, out var roles))
+        {
+            return roles.HasFlag(UserRoles.Administrator);
+        }
+
+        return int.TryParse(roleValue, out var numericRole)
+               && ((UserRoles)numericRole).HasFlag(UserRoles.Administrator);
+    }
+
+}

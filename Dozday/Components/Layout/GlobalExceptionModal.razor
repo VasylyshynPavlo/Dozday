@@ -1,0 +1,40 @@
+@implements IDisposable
+@inject GlobalExceptionModalState ExceptionModalState
+
+@if (ExceptionModalState.IsVisible)
+{
+    <div class="global-exception-modal-overlay" aria-live="assertive" aria-label="Помилка">
+        @foreach (var modal in ExceptionModalState.Items)
+        {
+            <div class="global-exception-modal" role="alertdialog">
+                <p class="global-exception-modal__message">@modal.Message</p>
+                <button type="button" class="global-exception-modal__close" @onclick="() => Close(modal.Id)">Закрити
+                </button>
+            </div>
+        }
+    </div>
+}
+
+@code {
+
+    protected override void OnInitialized()
+    {
+        ExceptionModalState.OnChange += HandleStateChanged;
+    }
+
+    private void Close(Guid modalId)
+    {
+        ExceptionModalState.Hide(modalId);
+    }
+
+    private void HandleStateChanged()
+    {
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        ExceptionModalState.OnChange -= HandleStateChanged;
+    }
+
+}

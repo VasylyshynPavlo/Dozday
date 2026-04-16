@@ -1,0 +1,173 @@
+@page "/"
+@page "/calendar"
+@using System.Globalization
+@rendermode InteractiveAuto
+
+<PageTitle>Календар</PageTitle>
+
+<div class="calendar">
+    <div class="calendar__panel">
+        <div class="calendar__toolbar">
+            <div class="btn-group">
+                <button class="btn btn--icon" @onclick="NavigatePrevious">&#8592;</button>
+                <button class="btn btn--icon" @onclick="NavigateNext">&#8594;</button>
+            </div>
+            <div class="calendar__title">@CalendarTitle</div>
+            <button class="btn btn--icon calendar__menu-toggle" @onclick="ToggleControlsMenu" aria-expanded="@isControlsMenuOpen" aria-label="Меню керування">☰</button>
+            <div class="calendar__actions @(isControlsMenuOpen ? "calendar__actions--open" : string.Empty)">
+                <button class="btn btn-rounded" @onclick="GoToToday">Сьогодні</button>
+                <div class="btn-group">
+                    <button class="btn" @onclick="() => SetCalendarMode(0)" disabled="@(calendarMode == 0 ? true : null)">День</button>
+                    <button class="btn" @onclick="() => SetCalendarMode(1)" disabled="@(calendarMode == 1 ? true : null)">Тиждень</button>
+                    <button class="btn" @onclick="() => SetCalendarMode(2)" disabled="@(calendarMode == 2 ? true : null)">Місяць</button>
+                </div>
+            </div>
+        </div>
+        <div class="calendar__content">
+            @switch (calendarMode)
+            {
+                case 0:
+                    <CalendarDay />
+                    break;
+                case 1:
+                    <CalendarWeek WeekStart="selectedFrom" />
+                    break;
+                case 2:
+                    <CalendarMonth />
+                    break;
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private int calendarMode = 1;
+    private readonly DateOnly now = DateOnly.FromDateTime(DateTime.Now);
+    private readonly CultureInfo culture = new("uk-UA");
+    private DateOnly selectedFrom;
+    private DateOnly selectedTo;
+    private bool isControlsMenuOpen;
+
+    private string CalendarTitle
+    {
+        get
+        {
+            return calendarMode switch
+            {
+                1 => GetWeekTitle(),
+                _ => $"{selectedFrom.ToString("MMMM", culture)}, {selectedFrom.Year}"
+            };
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        selectedFrom = GetWeekStart(now);
+        selectedTo = selectedFrom.AddDays(6);
+    }
+
+    private void SetCalendarMode(int mode)
+    {
+        calendarMode = mode;
+        isControlsMenuOpen = false;
+
+        switch (calendarMode)
+        {
+            case 0:
+                selectedTo = selectedFrom;
+                break;
+            case 1:
+                selectedTo = selectedFrom.AddDays(6);
+                break;
+            case 2:
+                selectedTo = selectedFrom;
+                break;
+        }
+    }
+
+    private void ToggleControlsMenu()
+    {
+        isControlsMenuOpen = !isControlsMenuOpen;
+    }
+
+    private void GoToToday()
+    {
+        var today = DateOnly.FromDateTime(DateTime.Now);
+
+        switch (calendarMode)
+        {
+            case 0:
+                selectedFrom = today;
+                selectedTo = today;
+                break;
+            case 1:
+                selectedFrom = GetWeekStart(today);
+                selectedTo = selectedFrom.AddDays(6);
+                break;
+            case 2:
+                selectedFrom = new DateOnly(today.Year, today.Month, 1);
+                selectedTo = selectedFrom;
+                break;
+        }
+
+        isControlsMenuOpen = false;
+    }
+
+    private void NavigatePrevious()
+    {
+        switch (calendarMode)
+        {
+            case 0:
+                selectedFrom = selectedFrom.AddDays(-1);
+                selectedTo = selectedFrom;
+                break;
+            case 1:
+                selectedFrom = selectedFrom.AddDays(-7);
+                selectedTo = selectedFrom.AddDays(6);
+                break;
+            case 2:
+                selectedFrom = selectedFrom.AddMonths(-1);
+                selectedTo = selectedFrom;
+                break;
+        }
+    }
+
+    private void NavigateNext()
+    {
+        switch (calendarMode)
+        {
+            case 0:
+                selectedFrom = selectedFrom.AddDays(1);
+                selectedTo = selectedFrom;
+                break;
+            case 1:
+                selectedFrom = selectedFrom.AddDays(7);
+                selectedTo = selectedFrom.AddDays(6);
+                break;
+            case 2:
+                selectedFrom = selectedFrom.AddMonths(1);
+                selectedTo = selectedFrom;
+                break;
+        }
+    }
+
+    private string GetWeekTitle()
+    {
+        var monthPart = selectedFrom.Month == selectedTo.Month && selectedFrom.Year == selectedTo.Year
+            ? selectedFrom.ToString("MMMM", culture)
+            : $"{selectedFrom.ToString("MMMM", culture)}-{selectedTo.ToString("MMMM", culture)}";
+
+        var yearPart = selectedFrom.Year == selectedTo.Year
+            ? selectedFrom.Year.ToString(CultureInfo.InvariantCulture)
+            : $"{selectedFrom.Year.ToString(CultureInfo.InvariantCulture)}-{selectedTo.Year.ToString(CultureInfo.InvariantCulture)}";
+
+        return $"{monthPart}, {yearPart}";
+    }
+
+    private static DateOnly GetWeekStart(DateOnly date)
+    {
+        var diff = (7 + (date.DayOfWeek - DayOfWeek.Monday)) % 7;
+        return date.AddDays(-diff);
+    }
+
+}

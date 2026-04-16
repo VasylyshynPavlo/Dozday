@@ -1,0 +1,74 @@
+﻿@page "/help"
+@using Dozday.Core.Models
+@using Markdig
+@inject HttpClient Http
+@attribute [StreamRendering]
+
+<PageTitle>Допомога</PageTitle>
+
+<div class="help-bg">
+    <div class="help-body @(IsLoading() ? "help-body--loading" : "")">
+        @if (qualityAssurances is null)
+        {
+            <LoadingIndicator/>
+        }
+        else
+        {
+            if (qualityAssurances.Count == 0)
+            {
+                <p class="help-no-data">Список порожній</p>
+            }
+            else
+            {
+                <div class="help-list">
+                    @foreach (var qa in qualityAssurances)
+                    {
+                        <button type="button" class="collapsible @(IsSectionOpen(qa.Id) ? "active" : string.Empty)"
+                                @onclick="() => ToggleSection(qa.Id)">@qa.Tittle</button>
+                        <div class="content" style="display:@(IsSectionOpen(qa.Id) ? "block" : "none")">
+                            <div class="markdown-body">@((MarkupString)ToHtml(qa.AssuranceMarkdown))</div>
+                        </div>
+                    }
+                </div>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    private List<QualityAssurance>? qualityAssurances;
+    private readonly HashSet<Guid> openedSections = [];
+
+    private static readonly MarkdownPipeline MarkdownPipeline = new MarkdownPipelineBuilder()
+        .UsePipeTables()
+        .Build();
+
+    protected override async Task OnInitializedAsync()
+    {
+        qualityAssurances = await Http.GetFromJsonAsync<List<QualityAssurance>>("/api/QualityAssurance/GetAll");
+    }
+
+    private void ToggleSection(Guid sectionId)
+    {
+        if (!openedSections.Add(sectionId))
+        {
+            openedSections.Remove(sectionId);
+        }
+    }
+
+    private bool IsSectionOpen(Guid sectionId)
+    {
+        return openedSections.Contains(sectionId);
+    }
+
+    private static string ToHtml(string? markdown)
+    {
+        return Markdown.ToHtml(markdown ?? string.Empty, MarkdownPipeline);
+    }
+
+    private bool IsLoading()
+    {
+        return qualityAssurances is null;
+    }
+
+}

@@ -1,0 +1,7 @@
+<Solution>
+    <Project Path="Dozday.Client/Dozday.Client.csproj"/>
+    <Project Path="Dozday.Code/Dozday.Core.csproj" Id="54613211-7382-401f-8248-4172e2e68961"/>
+    <Project Path="Dozday.Data/Dozday.Data.csproj" Id="ea205cc3-55a5-40d1-8d59-e372bf4200f7"/>
+    <Project Path="Dozday.Services/Dozday.Services.csproj" Id="422a3f6a-606e-42a6-ba67-e9883054b013"/>
+    <Project Path="Dozday/Dozday.csproj"/>
+</Solution>

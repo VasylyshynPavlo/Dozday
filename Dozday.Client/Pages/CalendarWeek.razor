@@ -1,0 +1,563 @@
+@using System.Globalization
+@using Dozday.Core.Enums
+@using Microsoft.AspNetCore.Components
+@using Dozday.Core.Models
+@inject IJSRuntime JS
+@implements IDisposable
+
+<div class="calendar-week" @ref="calendarWeekRef">
+    <div class="corner"></div>
+
+    @for (var i = 0; i < DaysInWeek; i++)
+    {
+        var day = WeekStart.AddDays(i);
+        <div class="day-header @(IsWeekend(day) ? "day-header--weekend" : string.Empty) @(IsToday(day) ? "day-header--today" : string.Empty)" style="@($"grid-column: {2 + i * 4} / span 4")">@day.ToString("ddd, dd", culture)</div>
+    }
+
+    @for (var i = 0; i < DaysInWeek; i++)
+    {
+        var day = WeekStart.AddDays(i);
+        <div class="day-background @(IsWeekend(day) ? "day-background--weekend" : string.Empty) @(IsToday(day) ? "day-background--today" : string.Empty)" style="@($"grid-column: {2 + i * 4} / span 4")"></div>
+    }
+
+    <div class="grid-lines"></div>
+
+    <div class="grid-vertical-lines grid-vertical-lines--time-separator" style="grid-row: 1 / -1; grid-column: 1"></div>
+    <div class="grid-vertical-lines" style="grid-row: 2 / -1; grid-column: 5"></div>
+    <div class="grid-vertical-lines" style="grid-row: 2 / -1; grid-column: 9"></div>
+    <div class="grid-vertical-lines" style="grid-row: 2 / -1; grid-column: 13"></div>
+    <div class="grid-vertical-lines" style="grid-row: 2 / -1; grid-column: 17"></div>
+    <div class="grid-vertical-lines" style="grid-row: 2 / -1; grid-column: 21"></div>
+    <div class="grid-vertical-lines" style="grid-row: 2 / -1; grid-column: 25"></div>
+    <div class="time-bg" style="grid-row: 2 / -1; grid-column: 1"></div>
+    <div class="time-label" style="grid-row: 3 / span 60;">08:00</div>
+    <div class="time-label" style="grid-row: 63 / span 60;">09:00</div>
+    <div class="time-label" style="grid-row: 123 / span 60;">10:00</div>
+    <div class="time-label" style="grid-row: 183 / span 60;">11:00</div>
+    <div class="time-label" style="grid-row: 243 / span 60;">12:00</div>
+    <div class="time-label" style="grid-row: 303 / span 60;">13:00</div>
+    <div class="time-label" style="grid-row: 363 / span 60;">14:00</div>
+    <div class="time-label" style="grid-row: 423 / span 60;">15:00</div>
+    <div class="time-label" style="grid-row: 483 / span 60;">16:00</div>
+    <div class="time-label" style="grid-row: 543 / span 60;">17:00</div>
+    <div class="time-label" style="grid-row: 603 / span 60;">18:00</div>
+    <div class="time-label" style="grid-row: 663 / span 60;">19:00</div>
+    <div class="time-label" style="grid-row: 723 / span 60;">20:00</div>
+    <div class="time-label" style="grid-row: 783 / span 60;">21:00</div>
+    <div class="time-label" style="grid-row: 843;">22:00</div>
+
+    @if (currentTimeRow is not null && currentTimeColumnStart is not null)
+    {
+        <div class="current-time-line current-time-line--time-column" style="grid-column: 1 / 2; grid-row: @(currentTimeRow.Value);"></div>
+        <div class="current-time-line" style="grid-column: @(currentTimeColumnStart.Value) / @(currentTimeColumnStart.Value + ColumnsPerDay); grid-row: @(currentTimeRow.Value);"></div>
+    }
+
+    @foreach (var viewEvent in weekEventViews)
+    {
+        <button type="button" class="event" style="@viewEvent.Style" @onclick="() => OpenEventDetails(viewEvent)">
+            <div class="event__header">
+                <span class="event__format" title="@GetEventTypeLabel(viewEvent.Event.Type)">@GetEventTypeIcon(viewEvent.Event.Type)</span>
+                <span class="event__title">@viewEvent.Title</span>
+            </div>
+            <div class="event__time">@viewEvent.TimeText</div>
+        </button>
+    }
+
+    @if (selectedEventView is not null)
+    {
+        <div class="event-details-backdrop" @onclick="CloseEventDetails">
+            <div class="event-details" style="@GetEventDetailsStyle(selectedEventView)" @onclick:stopPropagation="true">
+                <button type="button" class="event-details__close" @onclick="CloseEventDetails">✕</button>
+                <h3 class="event-details__title">@selectedEventView.Event.Summary</h3>
+                <div class="event-details__row"><strong>Формат:</strong> @GetEventTypeLabel(selectedEventView.Event.Type)</div>
+                <div class="event-details__row"><strong>Початок:</strong> @selectedEventView.Event.Start.ToString("dd.MM.yyyy HH:mm", culture)</div>
+                <div class="event-details__row"><strong>Кінець:</strong> @selectedEventView.Event.End.ToString("dd.MM.yyyy HH:mm", culture)</div>
+                @if (!string.IsNullOrWhiteSpace(selectedEventView.Event.Loacation))
+                {
+                    <div class="event-details__row"><strong>Локація:</strong> @selectedEventView.Event.Loacation</div>
+                }
+                @if (!string.IsNullOrWhiteSpace(selectedEventView.Event.Description))
+                {
+                    <div class="event-details__row"><strong>Опис:</strong> @selectedEventView.Event.Description</div>
+                }
+                @if (!string.IsNullOrWhiteSpace(selectedEventView.Event.MeetingLink))
+                {
+                    <div class="event-details__row"><a href="@selectedEventView.Event.MeetingLink" target="_blank" rel="noopener noreferrer">Посилання на зустріч</a></div>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+
+
+@code {
+    private const int DaysInWeek = 7;
+    private const int ColumnsPerDay = 4;
+    private const int FirstDayColumn = 2;
+    private const int DayStartHour = 8;
+    private const int DayEndHour = 22;
+    private const int MinutesInDayRange = (DayEndHour - DayStartHour) * 60;
+    private const int TopBufferRow = 2;
+    private const int TimeGridStartRow = 3;
+    private const int BottomBufferRow = 843;
+
+    private readonly Event event1 = new()
+    {
+        Id = Guid.Parse("9e640732-2a8d-4b23-8ead-a86563eed34e"),
+        Summary = "Ранкова зустріч 1",
+        Start = new DateTime(2026, 4, 15, 8, 0, 0),
+        End = new DateTime(2026, 4, 15, 9, 20, 0),
+        OrganizatorId = Guid.NewGuid(),
+        Description = "Опис події 1",
+        Loacation = "Локація 1",
+        MeetingLink = "https://example.com/meeting1",
+        Type = EventType.Offline
+    };
+    private readonly Event event2 = new()
+    {
+        Id = Guid.Parse("19111419-04eb-4462-856a-5e4685933d98"),
+        Summary = "Ранкова зустріч 2",
+        Start = new DateTime(2026, 4, 15, 8, 0, 0),
+        End = new DateTime(2026, 4, 16, 10, 20, 0),
+        OrganizatorId = Guid.NewGuid(),
+        Description = "Опис події 2",
+        Loacation = "Локація 2",
+        MeetingLink = "https://example.com/meeting2",
+        Type = EventType.Online
+    };
+    private readonly Event event3 = new()
+    {
+        Id = Guid.Parse("62bbc838-39c9-4aa4-88fc-2db2ecb6e6f0"),
+        Summary = "Довга подія на 2 дні",
+        Start = new DateTime(2026, 4, 16, 20, 0, 0),
+        End = new DateTime(2026, 4, 17, 10, 30, 0),
+        OrganizatorId = Guid.NewGuid(),
+        Description = "Опис події 3",
+        Loacation = "Локація 3",
+        MeetingLink = "https://example.com/meeting3",
+        Type = EventType.Hybrid
+    };
+    private readonly List<Event> events = [];
+    private readonly List<WeekEventView> weekEventViews = [];
+    private WeekEventView? selectedEventView;
+    private int? currentTimeRow;
+    private int? currentTimeColumnStart;
+    private PeriodicTimer? timeTicker;
+    private CancellationTokenSource? timeTickerCts;
+    private ElementReference calendarWeekRef;
+    private bool initialScrollHandled;
+    
+    protected override void OnInitialized()
+    {
+        events.Add(event1);
+        events.Add(event2);
+        events.Add(event3);
+
+        BuildWeekEventViews();
+        UpdateCurrentTimeIndicator();
+        _ = StartTimeTickerAsync();
+    }
+
+    protected override void OnParametersSet()
+    {
+        BuildWeekEventViews();
+        UpdateCurrentTimeIndicator();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || initialScrollHandled)
+        {
+            return;
+        }
+
+        initialScrollHandled = true;
+
+        var today = DateOnly.FromDateTime(DateTime.Now);
+        var dayIndex = today.DayNumber - WeekStart.DayNumber;
+        if (dayIndex < 0 || dayIndex >= DaysInWeek)
+        {
+            return;
+        }
+
+        await JS.InvokeVoidAsync("calendarWeek.scrollDayIntoCenter", calendarWeekRef, dayIndex);
+    }
+
+    private readonly CultureInfo culture = new("uk-UA");
+
+    [Parameter]
+    public DateOnly WeekStart { get; set; }
+
+    private void BuildWeekEventViews()
+    {
+        weekEventViews.Clear();
+
+        var weekEnd = WeekStart.AddDays(DaysInWeek - 1);
+        var daySlices = new List<EventSlice>[DaysInWeek];
+
+        for (var i = 0; i < DaysInWeek; i++)
+        {
+            daySlices[i] = [];
+        }
+
+        foreach (var calendarEvent in events)
+        {
+            if (calendarEvent.End <= calendarEvent.Start)
+            {
+                continue;
+            }
+
+            var eventStartDate = DateOnly.FromDateTime(calendarEvent.Start);
+            var eventEndDate = DateOnly.FromDateTime(calendarEvent.End);
+
+            var from = eventStartDate < WeekStart ? WeekStart : eventStartDate;
+            var to = eventEndDate > weekEnd ? weekEnd : eventEndDate;
+
+            for (var day = from; day <= to; day = day.AddDays(1))
+            {
+                var dayStart = day.ToDateTime(new TimeOnly(DayStartHour, 0));
+                var dayEnd = day.ToDateTime(new TimeOnly(DayEndHour, 0));
+
+                var segmentStart = calendarEvent.Start > dayStart ? calendarEvent.Start : dayStart;
+                var segmentEnd = calendarEvent.End < dayEnd ? calendarEvent.End : dayEnd;
+                var continuesFromPreviousDay = calendarEvent.Start < dayStart;
+                var continuesToNextDay = calendarEvent.End > dayEnd;
+
+                if (segmentEnd <= segmentStart)
+                {
+                    continue;
+                }
+
+                var startMinute = (int)(segmentStart - dayStart).TotalMinutes;
+                var endMinute = (int)Math.Ceiling((segmentEnd - dayStart).TotalMinutes);
+
+                startMinute = Math.Clamp(startMinute, 0, MinutesInDayRange);
+                endMinute = Math.Clamp(endMinute, 0, MinutesInDayRange);
+
+                if (endMinute <= startMinute)
+                {
+                    continue;
+                }
+
+                var dayIndex = day.DayNumber - WeekStart.DayNumber;
+                daySlices[dayIndex].Add(new EventSlice(
+                    calendarEvent,
+                    startMinute,
+                    endMinute,
+                    continuesFromPreviousDay,
+                    continuesToNextDay));
+            }
+        }
+
+        for (var dayIndex = 0; dayIndex < DaysInWeek; dayIndex++)
+        {
+            BuildDayEventViews(dayIndex, daySlices[dayIndex]);
+        }
+    }
+
+    private void BuildDayEventViews(int dayIndex, List<EventSlice> slices)
+    {
+        if (slices.Count == 0)
+        {
+            return;
+        }
+
+        var ordered = slices
+            .OrderBy(x => x.StartMinute)
+            .ThenByDescending(x => x.EndMinute)
+            .ToList();
+
+        var currentCluster = new List<EventSlice>();
+        var currentClusterEnd = -1;
+
+        foreach (var slice in ordered)
+        {
+            if (currentCluster.Count == 0)
+            {
+                currentCluster.Add(slice);
+                currentClusterEnd = slice.EndMinute;
+                continue;
+            }
+
+            if (slice.StartMinute < currentClusterEnd)
+            {
+                currentCluster.Add(slice);
+                if (slice.EndMinute > currentClusterEnd)
+                {
+                    currentClusterEnd = slice.EndMinute;
+                }
+            }
+            else
+            {
+                AddClusterViews(dayIndex, currentCluster);
+                currentCluster = [slice];
+                currentClusterEnd = slice.EndMinute;
+            }
+        }
+
+        AddClusterViews(dayIndex, currentCluster);
+    }
+
+    private void AddClusterViews(int dayIndex, List<EventSlice> cluster)
+    {
+        if (cluster.Count == 0)
+        {
+            return;
+        }
+
+        var active = new List<EventSlice>();
+        var maxConcurrency = 0;
+
+        foreach (var slice in cluster.OrderBy(x => x.StartMinute).ThenByDescending(x => x.EndMinute))
+        {
+            active.RemoveAll(x => x.EndMinute <= slice.StartMinute);
+
+            var usedColumns = new bool[ColumnsPerDay];
+            foreach (var item in active)
+            {
+                usedColumns[item.ColumnIndex] = true;
+            }
+
+            slice.ColumnIndex = Array.FindIndex(usedColumns, x => !x);
+            if (slice.ColumnIndex < 0)
+            {
+                slice.ColumnIndex = ColumnsPerDay - 1;
+            }
+
+            active.Add(slice);
+
+            if (active.Count > maxConcurrency)
+            {
+                maxConcurrency = active.Count;
+            }
+        }
+
+        var lanes = cluster
+            .Select(x => x.ColumnIndex)
+            .Distinct()
+            .OrderBy(x => x)
+            .ToList();
+
+        var compactLaneByOriginal = new Dictionary<int, int>();
+        for (var i = 0; i < lanes.Count; i++)
+        {
+            compactLaneByOriginal[lanes[i]] = i;
+        }
+
+        var spanColumns = Math.Max(1, ColumnsPerDay / Math.Max(1, maxConcurrency));
+        var dayColumnStart = FirstDayColumn + dayIndex * ColumnsPerDay;
+
+        foreach (var slice in cluster)
+        {
+            var compactLane = compactLaneByOriginal[slice.ColumnIndex];
+            var eventColumnStart = dayColumnStart + compactLane * spanColumns;
+            var eventColumnEnd = Math.Min(dayColumnStart + ColumnsPerDay, eventColumnStart + spanColumns);
+            if (eventColumnEnd <= eventColumnStart)
+            {
+                eventColumnEnd = eventColumnStart + 1;
+            }
+
+            var eventRowStart = TimeGridStartRow + slice.StartMinute;
+            var eventRowEnd = TimeGridStartRow + slice.EndMinute;
+
+            weekEventViews.Add(new WeekEventView(
+                slice.Event,
+                slice.Event.Summary,
+                $"{FormatMinuteText(slice.StartMinute)} • {FormatMinuteText(slice.EndMinute)}",
+                BuildEventStyle(slice.Event, eventColumnStart, eventColumnEnd, eventRowStart, eventRowEnd),
+                BuildEventAccentColor(slice.Event),
+                BuildEventBorderColor(slice.Event),
+                BuildEventTextColor(slice.Event)));
+        }
+    }
+
+    private static string GetEventTypeIcon(EventType type) => type switch
+    {
+        EventType.Online => "🌐",
+        EventType.Offline => "📍",
+        EventType.Hybrid => "🔀",
+        _ => "📅"
+    };
+
+    private static string GetEventTypeLabel(EventType type) => type switch
+    {
+        EventType.Online => "Онлайн",
+        EventType.Offline => "Очно",
+        EventType.Hybrid => "Онлайн + Очно",
+        _ => "None"
+    };
+
+    private static string FormatMinuteText(int minute)
+    {
+        var clamped = Math.Clamp(minute, 0, MinutesInDayRange);
+        var time = TimeOnly.FromTimeSpan(TimeSpan.FromHours(DayStartHour) + TimeSpan.FromMinutes(clamped));
+        return time.ToString("HH:mm", CultureInfo.InvariantCulture);
+    }
+
+    private void OpenEventDetails(WeekEventView viewEvent)
+    {
+        selectedEventView = viewEvent;
+    }
+
+    private void CloseEventDetails()
+    {
+        selectedEventView = null;
+    }
+
+    private bool IsWeekend(DateOnly day)
+    {
+        return day.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
+    }
+
+    private static bool IsToday(DateOnly day)
+    {
+        return day == DateOnly.FromDateTime(DateTime.Now);
+    }
+
+    private void UpdateCurrentTimeIndicator()
+    {
+        var now = DateTime.Now;
+        var today = DateOnly.FromDateTime(now);
+        var dayIndex = today.DayNumber - WeekStart.DayNumber;
+
+        if (dayIndex < 0 || dayIndex >= DaysInWeek)
+        {
+            currentTimeRow = null;
+            currentTimeColumnStart = null;
+            return;
+        }
+
+        var currentMinute = now.Hour * 60 + now.Minute - DayStartHour * 60;
+        if (currentMinute < 0 || currentMinute > MinutesInDayRange)
+        {
+            currentTimeRow = null;
+            currentTimeColumnStart = null;
+            return;
+        }
+
+        currentTimeRow = TimeGridStartRow + currentMinute;
+        currentTimeColumnStart = FirstDayColumn + dayIndex * ColumnsPerDay;
+    }
+
+    private async Task StartTimeTickerAsync()
+    {
+        timeTickerCts = new CancellationTokenSource();
+        timeTicker = new PeriodicTimer(TimeSpan.FromMinutes(1));
+
+        try
+        {
+            while (await timeTicker.WaitForNextTickAsync(timeTickerCts.Token))
+            {
+                UpdateCurrentTimeIndicator();
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    public void Dispose()
+    {
+        timeTickerCts?.Cancel();
+        timeTicker?.Dispose();
+        timeTickerCts?.Dispose();
+    }
+
+    private static string BuildEventStyle(Event calendarEvent, int columnStart, int columnEnd, int rowStart, int rowEnd)
+    {
+        var hash = calendarEvent.Id != Guid.Empty
+            ? calendarEvent.Id.GetHashCode()
+            : HashCode.Combine(calendarEvent.Summary, calendarEvent.Start, calendarEvent.End);
+        if (hash == int.MinValue)
+        {
+            hash = int.MaxValue;
+        }
+
+        var baseHue = Math.Abs(hash) % 360;
+        var backgroundHue = baseHue;
+        var borderHue = (baseHue + 18) % 360;
+        var textHue = (baseHue + 30) % 360;
+
+        return $"grid-column: {columnStart} / {columnEnd}; " +
+               $"grid-row: {rowStart} / {rowEnd}; " +
+               $"background-color: hsl({backgroundHue} 85% 93%); " +
+               $"border-left-color: hsl({borderHue} 70% 45%); " +
+               $"color: hsl({textHue} 70% 22%);";
+    }
+
+    private static string BuildEventAccentColor(Event calendarEvent)
+    {
+        var hash = calendarEvent.Id != Guid.Empty
+            ? calendarEvent.Id.GetHashCode()
+            : HashCode.Combine(calendarEvent.Summary, calendarEvent.Start, calendarEvent.End);
+
+        if (hash == int.MinValue)
+        {
+            hash = int.MaxValue;
+        }
+
+        var baseHue = Math.Abs(hash) % 360;
+        return $"hsl({baseHue} 85% 93%)";
+    }
+
+    private static string BuildEventBorderColor(Event calendarEvent)
+    {
+        var hash = calendarEvent.Id != Guid.Empty
+            ? calendarEvent.Id.GetHashCode()
+            : HashCode.Combine(calendarEvent.Summary, calendarEvent.Start, calendarEvent.End);
+
+        if (hash == int.MinValue)
+        {
+            hash = int.MaxValue;
+        }
+
+        var baseHue = Math.Abs(hash) % 360;
+        return $"hsl({(baseHue + 18) % 360} 70% 45%)";
+    }
+
+    private static string BuildEventTextColor(Event calendarEvent)
+    {
+        var hash = calendarEvent.Id != Guid.Empty
+            ? calendarEvent.Id.GetHashCode()
+            : HashCode.Combine(calendarEvent.Summary, calendarEvent.Start, calendarEvent.End);
+
+        if (hash == int.MinValue)
+        {
+            hash = int.MaxValue;
+        }
+
+        var baseHue = Math.Abs(hash) % 360;
+        return $"hsl({(baseHue + 30) % 360} 70% 22%)";
+    }
+
+    private static string GetEventDetailsStyle(WeekEventView viewEvent)
+    {
+        return $"border-top: 6px solid {viewEvent.BorderColor}; background-color: {viewEvent.BackgroundColor}; color: {viewEvent.TextColor};";
+    }
+
+    private sealed class EventSlice(
+        Event eventItem,
+        int startMinute,
+        int endMinute,
+        bool continuesFromPreviousDay,
+        bool continuesToNextDay)
+    {
+        public Event Event { get; } = eventItem;
+        public int StartMinute { get; } = startMinute;
+        public int EndMinute { get; } = endMinute;
+        public bool ContinuesFromPreviousDay { get; } = continuesFromPreviousDay;
+        public bool ContinuesToNextDay { get; } = continuesToNextDay;
+        public int ColumnIndex { get; set; }
+    }
+
+    private sealed record WeekEventView(
+        Event Event,
+        string Title,
+        string TimeText,
+        string Style,
+        string BackgroundColor,
+        string BorderColor,
+        string TextColor);
+}

@@ -1,0 +1,12 @@
+﻿.admin-bg {
+    height: calc(100dvh - 50px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    background: url("../../icons/BackgroundPattern.jpg") lightgrey 0% 0% / 300px 300px repeat;
+}
+
+.admin-body {
+    backdrop-filter: blur(10px);
+}
