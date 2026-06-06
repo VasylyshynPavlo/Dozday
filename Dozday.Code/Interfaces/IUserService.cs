@@ -6,10 +6,10 @@ namespace Dozday.Core.Interfaces;
 
 public interface IUserService
 {
-    Task AddAsync(User entity);
-    Task AddRangeAsync(IEnumerable<User> entities);
+    Task AddAsync(UserDto entity);
+    Task AddRangeAsync(IEnumerable<UserDto> entities);
 
-    Task<User?> GetUserByIdAsync(string id);
+    Task<UserDto?> GetUserByIdAsync(string id);
 
     Task<PagedResult<TResult>> GetUsersAsync<TResult>(
         Expression<Func<User, TResult>> selector,
@@ -23,12 +23,18 @@ public interface IUserService
         int pageSize = 10,
         string? fullName = null);
 
-    Task<int> DeleteUserByIdAsync(string id);
-    Task<int> DeleteUserByEmailAsync(string email);
+    Task<int> DeleteUserByIdAsync(string id, string userId);
+    Task<int> DeleteUserByEmailAsync(string email, string userId);
 
-    Task UpdateUserByIdAsync(User user);
+    Task UpdateUserByIdAsync(UserDto user);
 
     Task UnSubscribeUserAsync(string userId, string teacherId);
     Task SubscribeUserAsync(string userId, string teacherId);
     Task<int> UpdateUserByIdAsync(UserUpdateDto entity);
+
+    Task<List<UserDto>> SearchAsync(string text);
+    Task BanUserAsync(string userId, string adminId);
+    Task UnBanUserAsync(string userId, string adminId);
+
+    Task<bool> IsBannedAsync(string userId);
 }

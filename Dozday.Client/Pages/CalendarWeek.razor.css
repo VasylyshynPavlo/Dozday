@@ -29,7 +29,7 @@
     z-index: 20;
     background: #f2f3f5;
     border-bottom: 1px solid #bdbdbd;
-    border-right: 1px solid #c7c7c7;
+    border-right: 1px solid #bdbdbd;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -244,6 +244,10 @@
     margin-bottom: 8px;
 }
 
+.event-details__row-bottom {
+    opacity: 0.5;
+}
+
 @keyframes event-backdrop-fade-in {
     from {
         opacity: 0;
@@ -266,3 +270,14 @@
     }
 }
 
+.event-details-button {
+    margin-top: 16px;
+    padding: 10px 20px;
+    background-color: transparent;
+    color: var(--text-white);
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+    width: 100%;
+    border: none;
+}

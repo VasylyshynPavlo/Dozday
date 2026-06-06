@@ -1,159 +1,142 @@
 @page "/"
 @page "/calendar"
-@using System.Globalization
+@using System.Text
+@using System.Text.Json
+@using Dozday.Core.Interfaces
+@using Dozday.Core.DTOs
 @rendermode InteractiveAuto
+@inject IJSRuntime JS
+@inject ICalendarEventService CalendarEventService
 
 <PageTitle>Календар</PageTitle>
 
-<div class="calendar">
-    <div class="calendar__panel">
-        <div class="calendar__toolbar">
-            <div class="btn-group">
-                <button class="btn btn--icon" @onclick="NavigatePrevious">&#8592;</button>
-                <button class="btn btn--icon" @onclick="NavigateNext">&#8594;</button>
-            </div>
-            <div class="calendar__title">@CalendarTitle</div>
-            <button class="btn btn--icon calendar__menu-toggle" @onclick="ToggleControlsMenu" aria-expanded="@isControlsMenuOpen" aria-label="Меню керування">☰</button>
-            <div class="calendar__actions @(isControlsMenuOpen ? "calendar__actions--open" : string.Empty)">
-                <button class="btn btn-rounded" @onclick="GoToToday">Сьогодні</button>
-                <div class="btn-group">
-                    <button class="btn" @onclick="() => SetCalendarMode(0)" disabled="@(calendarMode == 0 ? true : null)">День</button>
-                    <button class="btn" @onclick="() => SetCalendarMode(1)" disabled="@(calendarMode == 1 ? true : null)">Тиждень</button>
-                    <button class="btn" @onclick="() => SetCalendarMode(2)" disabled="@(calendarMode == 2 ? true : null)">Місяць</button>
-                </div>
-            </div>
-        </div>
-        <div class="calendar__content">
-            @switch (calendarMode)
-            {
-                case 0:
-                    <CalendarDay Day="selectedDay" />
-                    break;
-                case 1:
-                    <CalendarWeek WeekStart="selectedWeekStart" />
-                    break;
-                case 2:
-                    <CalendarMonth />
-                    break;
-            }
-        </div>
-    </div>
-</div>
+<CalendarView Events="events" OnRangeChanged="HandleRangeChangedAsync" />
 
 @code {
-    private int calendarMode = 1;
-    private readonly DateOnly now = DateOnly.FromDateTime(DateTime.Now);
-    private readonly CultureInfo culture = new("uk-UA");
-    private DateOnly selectedDay;
-    private DateOnly selectedWeekStart;
-    private DateOnly selectedWeekEnd;
-    private DateOnly selectedMonth;
-    private bool isControlsMenuOpen;
+    private IReadOnlyList<EventDto> events = [];
+    private string? currentUserId;
+    private CalendarRange? currentRange;
 
-    private string CalendarTitle
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        get
+        if (!firstRender)
         {
-            return calendarMode switch
+            return;
+        }
+
+        await InitializeUserAsync();
+        await LoadEventsAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task HandleRangeChangedAsync(CalendarRange range)
+    {
+        currentRange = range;
+        await LoadEventsAsync();
+    }
+
+    private async Task InitializeUserAsync()
+    {
+        var token = await JS.InvokeAsync<string?>("auth.getToken");
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            currentUserId = null;
+            return;
+        }
+
+        currentUserId = TryGetUserIdFromToken(token);
+    }
+
+    private async Task LoadEventsAsync()
+    {
+        if (currentRange is null)
+        {
+            return;
+        }
+
+        if (!Guid.TryParse(currentUserId, out var userId))
+        {
+            events = [];
+            return;
+        }
+
+        events = await CalendarEventService.GetSubscribedTeacherEventsAsync(userId, currentRange.Value.From, currentRange.Value.To);
+    }
+
+    private static string? TryGetUserIdFromToken(string token)
+    {
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return null;
+        }
+
+        var parts = token.Split('.');
+        if (parts.Length < 2)
+        {
+            return null;
+        }
+
+        try
+        {
+            var payloadJson = Encoding.UTF8.GetString(Base64UrlDecode(parts[1]));
+            using var json = JsonDocument.Parse(payloadJson);
+            var root = json.RootElement;
+
+            if (TryGetTokenClaim(root, "nameid", out var nameId))
             {
-                0 => selectedDay.ToString("dddd dd, MMMM yyyy", culture),
-                1 => GetWeekTitle(),
-                _ => $"{selectedMonth.ToString("MMMM", culture)}, {selectedMonth.Year}"
-            };
+                return nameId;
+            }
+
+            if (TryGetTokenClaim(root, "sub", out var subject))
+            {
+                return subject;
+            }
+
+            if (TryGetTokenClaim(root, "http://schemas.xmlsoap.org/ws/2005/05/identity/claims/nameidentifier",
+                    out var claimNameId))
+            {
+                return claimNameId;
+            }
         }
-    }
-
-    protected override void OnInitialized()
-    {
-        selectedDay = now;
-        selectedWeekStart = GetWeekStart(now);
-        selectedWeekEnd = selectedWeekStart.AddDays(6);
-        selectedMonth = new DateOnly(now.Year, now.Month, 1);
-    }
-
-    private void SetCalendarMode(int mode)
-    {
-        calendarMode = mode;
-        isControlsMenuOpen = false;
-    }
-
-    private void ToggleControlsMenu()
-    {
-        isControlsMenuOpen = !isControlsMenuOpen;
-    }
-
-    private void GoToToday()
-    {
-        var today = DateOnly.FromDateTime(DateTime.Now);
-
-        switch (calendarMode)
+        catch
         {
-            case 0:
-                selectedDay = today;
-                break;
-            case 1:
-                selectedWeekStart = GetWeekStart(today);
-                selectedWeekEnd = selectedWeekStart.AddDays(6);
-                break;
-            case 2:
-                selectedMonth = new DateOnly(today.Year, today.Month, 1);
-                break;
+            return null;
         }
 
-        isControlsMenuOpen = false;
+        return null;
     }
 
-    private void NavigatePrevious()
+    private static bool TryGetTokenClaim(JsonElement root, string name, out string? value)
     {
-        switch (calendarMode)
+        value = null;
+
+        if (root.TryGetProperty(name, out var element) && element.ValueKind == JsonValueKind.String)
         {
-            case 0:
-                selectedDay = selectedDay.AddDays(-1);
-                break;
-            case 1:
-                selectedWeekStart = selectedWeekStart.AddDays(-7);
-                selectedWeekEnd = selectedWeekStart.AddDays(6);
-                break;
-            case 2:
-                selectedMonth = selectedMonth.AddMonths(-1);
-                break;
+            value = element.GetString();
+            return !string.IsNullOrWhiteSpace(value);
         }
+
+        return false;
     }
 
-    private void NavigateNext()
+    private static byte[] Base64UrlDecode(string input)
     {
-        switch (calendarMode)
+        var normalized = input.Replace('-', '+').Replace('_', '/');
+        var padding = normalized.Length % 4;
+        if (padding == 2)
         {
-            case 0:
-                selectedDay = selectedDay.AddDays(1);
-                break;
-            case 1:
-                selectedWeekStart = selectedWeekStart.AddDays(7);
-                selectedWeekEnd = selectedWeekStart.AddDays(6);
-                break;
-            case 2:
-                selectedMonth = selectedMonth.AddMonths(1);
-                break;
+            normalized += "==";
         }
-    }
+        else if (padding == 3)
+        {
+            normalized += "=";
+        }
+        else if (padding != 0)
+        {
+            normalized = normalized.PadRight(normalized.Length + (4 - padding), '=');
+        }
 
-    private string GetWeekTitle()
-    {
-        var monthPart = selectedWeekStart.Month == selectedWeekEnd.Month && selectedWeekStart.Year == selectedWeekEnd.Year
-            ? selectedWeekStart.ToString("MMMM", culture)
-            : $"{selectedWeekStart.ToString("MMMM", culture)}-{selectedWeekEnd.ToString("MMMM", culture)}";
-
-        var yearPart = selectedWeekStart.Year == selectedWeekEnd.Year
-            ? selectedWeekStart.Year.ToString(CultureInfo.InvariantCulture)
-            : $"{selectedWeekStart.Year.ToString(CultureInfo.InvariantCulture)}-{selectedWeekEnd.Year.ToString(CultureInfo.InvariantCulture)}";
-
-        return $"{monthPart}, {yearPart}";
-    }
-
-    private static DateOnly GetWeekStart(DateOnly date)
-    {
-        var diff = (7 + (date.DayOfWeek - DayOfWeek.Monday)) % 7;
-        return date.AddDays(-diff);
+        return Convert.FromBase64String(normalized);
     }
 
 }

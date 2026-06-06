@@ -8,4 +8,5 @@ public class UserUpdateDto
     public string? FullName { get; set; }
     public string? AvatarUrl { get; set; }
     public UserRoles? Role { get; set; }
+    public bool? Banned { get; set; } = false;
 }

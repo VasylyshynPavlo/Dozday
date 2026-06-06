@@ -9,7 +9,9 @@ public class User
     public string Email { get; set; } = string.Empty;
     public string? AvatarUrl { get; set; } = string.Empty;
     public UserRoles Role { get; set; } = UserRoles.None;
+    public bool Banned { get; set; } = false;
     public List<Event> OrganizedEvents { get; set; } = new();
-    public List<UserSubscription> Subscriptions { get; set; } = new();
+    public List<UserSubscription> UserSubscriptions { get; set; } = new();
+    public List<UserEventSubscription> EventSubscriptions { get; set; } = new();
     public List<UserSubscription> Subscribers { get; set; } = new();
 }

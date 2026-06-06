@@ -22,6 +22,95 @@ namespace Dozday.Data.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Dozday.Core.Models.Archive.EventArchived", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("End")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Location")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("MeetingLink")
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("OrganizatorId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("Start")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Summary")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("EventArchive");
+                });
+
+            modelBuilder.Entity("Dozday.Core.Models.Archive.UserArchived", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AvatarUrl")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Email")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("FullName")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("Role")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("UserArchive");
+                });
+
+            modelBuilder.Entity("Dozday.Core.Models.Archive.UserSubscriptionArchived", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("TeacherId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("UserSubscriptionArchive");
+                });
+
             modelBuilder.Entity("Dozday.Core.Models.Event", b =>
                 {
                     b.Property<Guid>("Id")
@@ -35,8 +124,7 @@ namespace Dozday.Data.Migrations
                     b.Property<DateTime>("End")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<string>("Loacation")
-                        .IsRequired()
+                    b.Property<string>("Location")
                         .HasColumnType("text");
 
                     b.Property<string>("MeetingLink")
@@ -62,7 +150,7 @@ namespace Dozday.Data.Migrations
                     b.ToTable("Events");
                 });
 
-            modelBuilder.Entity("Dozday.Core.Models.QualityAssurance", b =>
+            modelBuilder.Entity("Dozday.Core.Models.QualityAndAssurance", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -78,7 +166,7 @@ namespace Dozday.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("QualityAssurances");
+                    b.ToTable("QualityAndAssurances");
                 });
 
             modelBuilder.Entity("Dozday.Core.Models.User", b =>
@@ -89,6 +177,9 @@ namespace Dozday.Data.Migrations
 
                     b.Property<string>("AvatarUrl")
                         .HasColumnType("text");
+
+                    b.Property<bool>("Banned")
+                        .HasColumnType("boolean");
 
                     b.Property<string>("Email")
                         .IsRequired()
@@ -106,14 +197,52 @@ namespace Dozday.Data.Migrations
                     b.ToTable("Users");
                 });
 
-            modelBuilder.Entity("Dozday.Core.Models.UserSubscription", b =>
+            modelBuilder.Entity("Dozday.Core.Models.UserEventSubscription", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
 
-                    b.Property<DateTime>("Date")
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("EventId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("UserEventSubscriptions");
+                });
+
+            modelBuilder.Entity("Dozday.Core.Models.UserEventSubscriptionArchive", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("DeletedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("EventId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("UserEventSubscriptionArchive");
+                });
+
+            modelBuilder.Entity("Dozday.Core.Models.UserSubscription", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
 
                     b.Property<Guid>("TeacherId")
                         .HasColumnType("uuid");
@@ -141,18 +270,37 @@ namespace Dozday.Data.Migrations
                     b.Navigation("Organizator");
                 });
 
+            modelBuilder.Entity("Dozday.Core.Models.UserEventSubscription", b =>
+                {
+                    b.HasOne("Dozday.Core.Models.Event", "Event")
+                        .WithMany("Subscribers")
+                        .HasForeignKey("EventId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Dozday.Core.Models.User", "User")
+                        .WithMany("EventSubscriptions")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Event");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("Dozday.Core.Models.UserSubscription", b =>
                 {
                     b.HasOne("Dozday.Core.Models.User", "Teacher")
                         .WithMany("Subscribers")
                         .HasForeignKey("TeacherId")
-                        .OnDelete(DeleteBehavior.NoAction)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.HasOne("Dozday.Core.Models.User", "User")
-                        .WithMany("Subscriptions")
+                        .WithMany("UserSubscriptions")
                         .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.NoAction)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.Navigation("Teacher");
@@ -160,13 +308,20 @@ namespace Dozday.Data.Migrations
                     b.Navigation("User");
                 });
 
+            modelBuilder.Entity("Dozday.Core.Models.Event", b =>
+                {
+                    b.Navigation("Subscribers");
+                });
+
             modelBuilder.Entity("Dozday.Core.Models.User", b =>
                 {
+                    b.Navigation("EventSubscriptions");
+
                     b.Navigation("OrganizedEvents");
 
                     b.Navigation("Subscribers");
 
-                    b.Navigation("Subscriptions");
+                    b.Navigation("UserSubscriptions");
                 });
 #pragma warning restore 612, 618
         }

@@ -1,0 +1,213 @@
+﻿@using AutoMapper
+@using Dozday.Core.DTOs
+@using Dozday.Core.Enums
+@using Dozday.Core.Interfaces
+@using Dozday.Core.Models
+@using Dozday.Services.Services
+@inject IUserService UserService
+@inject IMapper _mapper
+@inject IJSRuntime JSRuntime
+@inject GlobalStorageService GlobalStorageService
+
+<div class="admin-section">
+    <form class="search-bar-rounded search-bar w-60p-adaptive align-self-center" @onsubmit:preventDefault>
+        <input type="text" class="admin-search-term" placeholder="Пошук користувача" @bind-value="searchTerm" @bind-value:event="oninput" @bind-value:after="Search" />
+    </form>
+    <div class="admin-tabs">
+        <button type="button" class="button flex-1" disabled="@(activePage == 1)" @onclick="() => ChangePage(1)">Усі</button>
+        <button type="button" class="button flex-1" disabled="@(activePage == 2)" @onclick="() => ChangePage(2)">Користувачі</button>
+        <button type="button" class="button flex-1" disabled="@(activePage == 3)" @onclick="() => ChangePage(3)">Викладачі</button>
+        <button type="button" class="button flex-1" disabled="@(activePage == 4)" @onclick="() => ChangePage(4)">Адміністатори</button>
+        <button type="button" class="button flex-1" disabled="@(activePage == 5)" @onclick="() => ChangePage(5)">Заблоковані</button>
+    </div>
+    <div class="admin-list-header">
+        <h4>Користувачі</h4>
+        <span title="Кількість користувачів" class="counter">@users.Count</span>
+    </div>
+    <div class="admin-list">
+        @if (users.Count == 0)
+        {
+            <div class="admin-empty">Користувачів ще немає.</div>
+        }
+        else
+        {
+            @foreach (var usr in users)
+            {
+                <div class="card user-card">
+                    <div class="item-card-header">
+                        <div class="item-card-meta-row">
+                            <span>Ім'я</span>
+                            <span>@usr.FullName</span>
+                        </div>
+                        <div class="item-card-meta-row">
+                            <div class="w-100p">
+                                <span class="item-card-meta-label">Ідентифікатор</span>
+                                <button class="button" style="font-size: 12px;" @onclick="() => CopyToClipboard(usr.Id)">Скопіювати</button>
+                            </div>
+                            <span>@(string.IsNullOrWhiteSpace(usr.Id) ? "Помилка" : usr.Id)</span>
+                        </div>
+                        <div class="item-card-meta-row">
+                            <span class="item-card-meta-label">Роль</span>
+                            <span>@(string.IsNullOrWhiteSpace(GetRoleLabel(usr.Role.ToString())) ? "Не вказано" : GetRoleLabel(usr.Role.ToString()))</span>
+                        </div>
+                    </div>
+                    <div class="user-card-actions">
+                        <button class="button button-red w-100p" disabled="@(currentUserId == usr.Id)" @onclick="() => ChangeBan(usr.Id, usr.Banned)">@(!usr.Banned ? "Заблокувати" : "Розблокувати")</button>
+                        <button class="button w-100p @(currentUserId == usr.Id ? "button-unactive" : "")" disabled="@(currentUserId == usr.Id)" @onclick="() => ToggleAdminRole(usr)">@(usr.Role.HasFlag(UserRoles.Administrator) ? "Зняти права" : "Зробити адміністратором")</button>
+                    </div>
+                </div>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    private List<UserDto> users = new();
+    private string? currentUserId = string.Empty;
+    private string searchTerm = string.Empty;
+    private int activePage = 1;
+
+    protected override void OnInitialized()
+    {
+        GlobalStorageService.OnTokenChanged += OnTokenChanged;
+    }
+
+    private async void OnTokenChanged()
+    {
+        currentUserId = GlobalStorageService.UserId;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        GlobalStorageService.OnTokenChanged -= OnTokenChanged;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        users = _mapper.Map<List<UserDto>>((await UserService.GetUsersAsync<User>(u => u, u => true, -1, -1)).Items);
+
+    }
+
+    private async Task Search()
+    {
+        if (!string.IsNullOrWhiteSpace(searchTerm) && searchTerm.Length >= 3)
+        {
+            activePage = 1;
+            users = _mapper.Map<List<UserDto>>((await UserService.SearchAsync(searchTerm)));
+        }
+        else
+        {
+            activePage = 1;
+            users = _mapper.Map<List<UserDto>>((await UserService.GetUsersAsync<User>(u => u, u => true, -1, -1)).Items);
+        }
+
+        StateHasChanged();
+    }
+
+    private static string GetRoleLabel(string roles)
+    {
+        return roles.Replace("Administrator", "Адміністратор")
+                    .Replace("Teacher", "Викладач")
+                    .Replace("None", "Користувач");
+    }
+
+    private async Task ToggleAdminRole(UserDto user)
+    {
+        if (currentUserId == user.Id || currentUserId == null)
+        {
+            return;
+        }
+        try
+        {
+            if (user.Role.HasFlag(UserRoles.Administrator))
+            {
+                user.Role &= ~UserRoles.Administrator;
+            }
+            else
+            {
+                user.Role |= UserRoles.Administrator;
+            }
+            await UserService.UpdateUserByIdAsync(user);
+
+            var userIndex = users.FindIndex(u => u.Id == user.Id);
+            if (userIndex >= 0)
+            {
+                users[userIndex].Role = user.Role;
+            }
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Помилка при зміні ролі користувача: {ex.Message}");
+        }
+    }
+
+    private async Task ChangePage(int page)
+    {
+        switch (page)
+        {
+            case 1:
+                users = _mapper.Map<List<UserDto>>((await UserService.GetUsersAsync<User>(u => u, u => true, -1, -1)).Items);
+                break;
+            case 2:
+                users = _mapper.Map<List<UserDto>>((await UserService.GetUsersAsync<User>(u => u, u => u.Role == UserRoles.None, -1, -1)).Items);
+                break;
+            case 3:
+                users = _mapper.Map<List<UserDto>>((await UserService.GetUsersAsync<User>(u => u, u => u.Role.HasFlag(UserRoles.Teacher), -1, -1)).Items);
+                break;
+            case 4:
+                users = _mapper.Map<List<UserDto>>((await UserService.GetUsersAsync<User>(u => u, u => u.Role.HasFlag(UserRoles.Administrator), -1, -1)).Items);
+                break;
+            case 5:
+                users = _mapper.Map<List<UserDto>>((await UserService.GetUsersAsync<User>(u => u, u => u.Banned, -1, -1)).Items);
+                break;
+            default:
+                break;
+        }
+        activePage = page;
+        StateHasChanged();
+    }
+
+    private async Task ChangeBan(string userId, bool banned)
+    {
+        if (currentUserId == userId || currentUserId == null)
+        {
+            return;
+        }
+        try
+        {
+            if (banned)
+            {
+                await UserService.UnBanUserAsync(userId, currentUserId);
+            }
+            else
+            {
+                await UserService.BanUserAsync(userId, currentUserId);
+            }
+
+            var userIndex = users.FindIndex(u => u.Id == userId);
+            if (userIndex >= 0)
+            {
+                users[userIndex].Banned = !banned;
+            }
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Помилка при зміні статусу блокування користувача: {ex.Message}");
+        }
+    }
+
+    private async Task CopyToClipboard(string text)
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("copyToClipboard", text);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Помилка при копіюванні тексту: {ex.Message}");
+        }
+    }
+}

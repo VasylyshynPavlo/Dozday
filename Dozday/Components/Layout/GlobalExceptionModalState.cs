@@ -2,11 +2,12 @@ namespace Dozday.Components.Layout;
 
 public class GlobalExceptionModalState
 {
-    private const string DefaultUnhandledErrorMessage = "Внутріня помилка";
+    private const string DefaultUnhandledErrorMessage = "Внутрішня помилка";
 
     private static readonly HashSet<Type> HandledExceptionTypes =
     [
         typeof(ArgumentException),
+        typeof(UnauthorizedAccessException),
         typeof(InvalidOperationException),
         typeof(KeyNotFoundException),
         typeof(FormatException)
@@ -26,6 +27,10 @@ public class GlobalExceptionModalState
                 ? "Сталася помилка. Спробуйте ще раз."
                 : exception.Message
             : DefaultUnhandledErrorMessage;
+
+#if DEBUG
+        message = exception.ToString();
+#endif
 
         _items.Add(new GlobalExceptionModalItem(Guid.NewGuid(), message));
         OnChange?.Invoke();

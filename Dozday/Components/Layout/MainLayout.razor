@@ -1,41 +1,16 @@
 ﻿@inherits LayoutComponentBase
 @inject IJSRuntime JS
+@using Dozday.Services.Services
+@inject GlobalStorageService GlobalStorageService
+@inject AuthGuard AuthGuard
 @inject NavigationManager Navigation
+@implements IDisposable
 
 <div class="page">
-    <GlobalExceptionModal/>
 
     <div class="top-nav">
         <NavMenu/>
     </div>
-
-    @code {
-        private bool _authChecked;
-
-        protected override async Task OnAfterRenderAsync(bool firstRender)
-        {
-            if (_authChecked)
-            {
-                return;
-            }
-
-            var relativePath = Navigation.ToBaseRelativePath(Navigation.Uri);
-            if (relativePath.StartsWith("auth", StringComparison.OrdinalIgnoreCase))
-            {
-                _authChecked = true;
-                return;
-            }
-
-            var token = await JS.InvokeAsync<string?>("auth.getToken");
-            _authChecked = true;
-
-            if (string.IsNullOrWhiteSpace(token))
-            {
-                Navigation.NavigateTo("/auth", true);
-            }
-        }
-
-    }
 
     <main>
         <GlobalErrorBoundary>
@@ -51,3 +26,25 @@
     <a href="." class="reload">Reload</a>
     <span class="dismiss">🗙</span>
 </div>
+
+@code {
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await AuthGuard.CheckAsync();
+
+            Navigation.LocationChanged += OnLocationChanged;
+        }
+    }
+
+    private async void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        await AuthGuard.CheckAsync();
+    }
+
+    public void Dispose()
+    {
+        Navigation.LocationChanged -= OnLocationChanged;
+    }
+}

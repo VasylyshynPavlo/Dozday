@@ -3,38 +3,53 @@
 @using System.IdentityModel.Tokens.Jwt
 @using System.Security.Claims
 @using Dozday.Core.Enums
+@using Dozday.Services.Services
 @implements IDisposable
 
-<div class="nav-menu @(_isMenuOpen ? "nav-menu--open" : string.Empty)">
-    <div class="nav-menu__current-page">@GetCurrentPageTitle()</div>
-    <button type="button" class="nav-menu__burger" @onclick="ToggleMenu" aria-expanded="@_isMenuOpen" aria-label="Меню">☰</button>
+<div class="nav-menu @(_isMenuOpen ? "nav-menu-open" : string.Empty)">
+    
+    <button type="button" class="nav-menu-toggle" @onclick="ToggleMenu" aria-expanded="@_isMenuOpen" aria-label="Меню">☰</button>
 
-    <div class="nav-menu__items">
-        <a href="/calendar" class="nav-menu__item @(IsActive("calendar") ? "nav-menu__item--active" : string.Empty)">
-            <div class="nav-menu__label @(IsActive("calendar") ? "nav-menu__label--active" : string.Empty)">Календар
+    <div class="nav-menu-links">
+        <a href="/calendar" class="nav-menu-link @(IsActive("calendar") ? "nav-menu-link-active" : string.Empty)">
+            <div class="nav-menu-link-text @(IsActive("calendar") ? "nav-menu-link-text-active" : string.Empty)">Календар
             </div>
         </a>
-        <a href="/teachers" class="nav-menu__item @(IsActive("teachers") ? "nav-menu__item--active" : string.Empty)">
-            <div class="nav-menu__label @(IsActive("teachers") ? "nav-menu__label--active" : string.Empty)">Викладачі
+        <a href="/teachers" class="nav-menu-link @(IsActive("teachers") ? "nav-menu-link-active" : string.Empty)">
+            <div class="nav-menu-link-text @(IsActive("teachers") ? "nav-menu-link-text-active" : string.Empty)">Викладачі
             </div>
         </a>
-        <a href="/help" class="nav-menu__item @(IsActive("help") ? "nav-menu__item--active" : string.Empty)">
-            <div class="nav-menu__label @(IsActive("help") ? "nav-menu__label--active" : string.Empty)">Допомога</div>
+        <a href="/help" class="nav-menu-link @(IsActive("help") ? "nav-menu-link-active" : string.Empty)">
+            <div class="nav-menu-link-text @(IsActive("help") ? "nav-menu-link-text-active" : string.Empty)">Допомога</div>
         </a>
+        @if (_isTeacher)
+        {
+            <a href="/teacher-panel"
+               class="nav-menu-link @(IsActive("teacher-panel") ? "nav-menu-link-active" : string.Empty)">
+                <div class="nav-menu-link-text @(IsActive("teacher-panel") ? "nav-menu-link-text-active" : string.Empty)">
+                    Панель викладача
+                </div>
+            </a>
+        }
         @if (_isAdmin)
         {
             <a href="/admin/admin-panel"
-               class="nav-menu__item @(IsActive("admin-panel") ? "nav-menu__item--active" : string.Empty)">
-                <div class="nav-menu__label @(IsActive("admin-panel") ? "nav-menu__label--active" : string.Empty)">
+               class="nav-menu-link @(IsActive("admin-panel") ? "nav-menu-link-active" : string.Empty)">
+                <div class="nav-menu-link-text @(IsActive("admin-panel") ? "nav-menu-link-text-active" : string.Empty)">
                     Панель адміністратора
                 </div>
             </a>
         }
     </div>
 
-    <div class="nav-menu__item nav-menu__account">
-        <img class="nav-menu__avatar" src="@_avatarUrl" alt="Avatar"/>
-        <button type="button" class="nav-menu__logout-btn" @onclick="LogoutAsync">Вийти</button>
+    <div class="nav-menu-actions">
+        <a href="#">
+            <div class="nav-menu-user">
+                <img class="nav-menu-user-avatar" src="@_avatarUrl" alt="Avatar" />
+                @_userName
+            </div>
+        </a>
+        <button type="button" class="nav-menu-link nav-menu-logout" @onclick="LogoutAsync">Вийти</button>
     </div>
 </div>
 
@@ -42,7 +57,9 @@
     private const string DefaultAvatarUrl = "https://placehold.co/100?text=Placeholder&font=roboto";
     private string _avatarUrl = DefaultAvatarUrl;
     private bool _isAdmin;
+    private bool _isTeacher;
     private bool _isMenuOpen;
+    private string _userName = string.Empty;
 
     protected override void OnInitialized()
     {
@@ -60,10 +77,10 @@
         StateHasChanged();
     }
 
-    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    private async void OnLocationChanged(object? sender, LocationChangedEventArgs e)
     {
         _isMenuOpen = false;
-        InvokeAsync(StateHasChanged);
+        await InvokeAsync(StateHasChanged);
     }
 
     private void ToggleMenu()
@@ -118,6 +135,8 @@
         {
             _avatarUrl = DefaultAvatarUrl;
             _isAdmin = false;
+            _isTeacher = false;
+            _userName = string.Empty;
             return;
         }
 
@@ -125,13 +144,16 @@
         {
             var jwt = new JwtSecurityTokenHandler().ReadJwtToken(token);
             _avatarUrl = jwt.Claims.FirstOrDefault(c => c.Type == "avatar")?.Value ?? DefaultAvatarUrl;
+            _userName = jwt.Claims.FirstOrDefault(c => c.Type == "unique_name")?.Value ?? "error";
             var roleClaim = jwt.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role || c.Type == "role" || c.Type == "roles");
             _isAdmin = IsAdministrator(roleClaim?.Value);
+            _isTeacher = IsTeacher(roleClaim?.Value);
         }
         catch
         {
             _avatarUrl = DefaultAvatarUrl;
             _isAdmin = false;
+            _isTeacher = false;
         }
     }
 
@@ -160,6 +182,22 @@
 
         return int.TryParse(roleValue, out var numericRole)
                && ((UserRoles)numericRole).HasFlag(UserRoles.Administrator);
+    }
+
+    private static bool IsTeacher(string? roleValue)
+    {
+        if (string.IsNullOrWhiteSpace(roleValue))
+        {
+            return false;
+        }
+
+        if (Enum.TryParse<UserRoles>(roleValue, out var roles))
+        {
+            return roles.HasFlag(UserRoles.Teacher);
+        }
+
+        return int.TryParse(roleValue, out var numericRole)
+               && ((UserRoles)numericRole).HasFlag(UserRoles.Teacher);
     }
 
 }

@@ -1,3 +1,5 @@
+using AutoMapper;
+using Dozday.Core.DTOs;
 using Dozday.Core.Enums;
 using Dozday.Core.Interfaces;
 using Dozday.Core.Models;
@@ -11,7 +13,8 @@ namespace Dozday.Services.Services;
 public class AuthService(
     IJwtService jwtService,
     IUserService userService,
-    IOptions<GoogleAuthOptions> googleAuthOptions) : IAuthService
+    IOptions<GoogleAuthOptions> googleAuthOptions,
+    IMapper mapper) : IAuthService
 {
     private static readonly JsonSerializerOptions _jsonOptions = new()
     {
@@ -22,6 +25,7 @@ public class AuthService(
 
     private readonly IJwtService _jwtService = jwtService;
     private readonly IUserService _userService = userService;
+    private readonly IMapper _mapper = mapper;
 
     public async Task<string?> LoginWithGoogleAsync(string IdToken, string? accessToken = null)
     {
@@ -47,13 +51,15 @@ public class AuthService(
         {
             var domain = email.Split('@').LastOrDefault()?.ToLower();
             if (string.IsNullOrEmpty(domain)) throw new ArgumentNullException("Email domain is invalid.");
+
             if (!_googleAuthOptions.WhiteListedEmailDomains.Contains(domain))
                 throw new Exception("Email domain is not allowed.");
 
             var name = peopleProfile?.Name ?? payload?.Name ?? email.Split('@')[0];
             var pictureUrl = peopleProfile?.PhotoUrl ?? payload?.Picture;
-            var newUser = new User
+            var newUser = new UserDto
             {
+                Id = Guid.NewGuid().ToString(),
                 FullName = name,
                 Email = email,
                 AvatarUrl = pictureUrl,
@@ -61,14 +67,16 @@ public class AuthService(
             };
             await _userService.AddAsync(newUser);
 
-            return _jwtService.GenerateToken(newUser);
+            return _jwtService.GenerateToken(_mapper.Map<User>(newUser));
         }
 
         user.FullName = peopleProfile?.Name ?? payload?.Name ?? user.FullName;
         user.AvatarUrl = peopleProfile?.PhotoUrl ?? payload?.Picture ?? user.AvatarUrl;
-        await _userService.UpdateUserByIdAsync(user);
+        await _userService.UpdateUserByIdAsync(_mapper.Map<UserDto>(user));
 
-        return _jwtService.GenerateToken(user);
+        var token = _jwtService.GenerateToken(_mapper.Map<User>(user));
+        Console.WriteLine(token);
+        return token;
         throw new NotImplementedException();
     }
 

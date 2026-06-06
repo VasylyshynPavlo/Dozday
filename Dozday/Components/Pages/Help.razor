@@ -1,42 +1,44 @@
 ﻿@page "/help"
 @using Dozday.Core.Models
 @using Markdig
-@inject HttpClient Http
+@using Dozday.Core.Interfaces
+@inject IQualityAndAssuranceService QualityAndAssuranceService
 @attribute [StreamRendering]
 
 <PageTitle>Допомога</PageTitle>
 
 <div class="help-bg">
     <div class="help-body @(IsLoading() ? "help-body--loading" : "")">
-        @if (qualityAssurances is null)
+        @if (qualityAndAssurances is null)
         {
             <LoadingIndicator/>
         }
         else
         {
-            if (qualityAssurances.Count == 0)
-            {
-                <p class="help-no-data">Список порожній</p>
-            }
-            else
-            {
-                <div class="help-list">
-                    @foreach (var qa in qualityAssurances)
+            <div class="help-list">
+                @if (qualityAndAssurances.Count == 0)
+                {
+                    <p>Немає інформації для відображення.</p>
+                }
+                else {
+                    @foreach (var qa in qualityAndAssurances)
                     {
-                        <button type="button" class="collapsible @(IsSectionOpen(qa.Id) ? "active" : string.Empty)"
-                                @onclick="() => ToggleSection(qa.Id)">@qa.Tittle</button>
-                        <div class="content" style="display:@(IsSectionOpen(qa.Id) ? "block" : "none")">
-                            <div class="markdown-body">@((MarkupString)ToHtml(qa.AssuranceMarkdown))</div>
+                        <div>
+                            <button type="button" class="collapsible @(IsSectionOpen(qa.Id) ? "active" : string.Empty)"
+                                    @onclick="() => ToggleSection(qa.Id)">@qa.Tittle</button>
+                            <div class="content" style="display:@(IsSectionOpen(qa.Id) ? "block" : "none")">
+                                <div class="markdown-body">@((MarkupString)ToHtml(qa.AssuranceMarkdown))</div>
+                            </div>
                         </div>
                     }
-                </div>
-            }
+                }
+            </div>
         }
     </div>
 </div>
 
 @code {
-    private List<QualityAssurance>? qualityAssurances;
+    private List<QualityAndAssurance>? qualityAndAssurances;
     private readonly HashSet<Guid> openedSections = [];
 
     private static readonly MarkdownPipeline MarkdownPipeline = new MarkdownPipelineBuilder()
@@ -45,7 +47,7 @@
 
     protected override async Task OnInitializedAsync()
     {
-        qualityAssurances = await Http.GetFromJsonAsync<List<QualityAssurance>>("/api/QualityAssurance/GetAll");
+        qualityAndAssurances = (await QualityAndAssuranceService.GetAllAsync()).ToList();
     }
 
     private void ToggleSection(Guid sectionId)
@@ -68,7 +70,7 @@
 
     private bool IsLoading()
     {
-        return qualityAssurances is null;
+        return qualityAndAssurances is null;
     }
 
 }

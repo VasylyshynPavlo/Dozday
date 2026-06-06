@@ -1,12 +1,31 @@
-﻿.admin-bg {
-    height: calc(100dvh - 50px);
+﻿.admin-body {
+    height: calc(100svh - 50px);
+    width: 100%;
+    background: #fff;
+    overflow: hidden;
+    scroll-behavior: smooth;
+    padding: 15px;
+    gap: 10px;
     display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 20px;
-    background: url("../../icons/BackgroundPattern.jpg") lightgrey 0% 0% / 300px 300px repeat;
+    flex-direction: column;
+    border-radius: 8px;
 }
 
-.admin-body {
-    backdrop-filter: blur(10px);
+.admin-pages {
+    display: flex;
+    flex-direction: row;
+    gap: 15px;
+    flex: 1;
+    overflow: hidden;
+}
+
+.admin-column {
+    flex: 1;
+    height: 100%;
+    width: 100%;
+}
+.admin-tabs-pages {
+    display: flex;
+    gap: 10px;
+    overflow-x: auto;
 }

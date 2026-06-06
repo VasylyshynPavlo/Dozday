@@ -1,6 +1,6 @@
 ﻿namespace Dozday.Core.Models;
 
-public class QualityAssurance
+public class QualityAndAssurance
 {
     public Guid Id { get; set; }
     public string Tittle { get; set; } = string.Empty;

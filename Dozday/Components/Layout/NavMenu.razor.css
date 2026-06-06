@@ -10,7 +10,7 @@
     height: 50px;
 }
 
-.nav-menu__burger {
+.nav-menu-toggle {
     display: none;
     border: 0;
     background: transparent;
@@ -22,11 +22,11 @@
     color: #15386c;
 }
 
-.nav-menu__current-page {
+.nav-menu-title {
     display: none;
 }
 
-.nav-menu__items {
+.nav-menu-links {
     flex: 1 1 0;
     align-self: stretch;
     display: flex;
@@ -35,7 +35,7 @@
     overflow: hidden;
 }
 
-.nav-menu__item {
+.nav-menu-link {
     width: 150px;
     align-self: stretch;
     display: inline-flex;
@@ -49,19 +49,49 @@
     color: inherit;
 }
 
-.nav-menu__item:hover {
+.nav-menu-actions {
+    display: flex;
+    flex-direction: row;
+}
+
+a {
+    text-decoration: none;
+}
+
+.nav-menu-user {
+    padding: 5px;
+    margin: 5px;
+    display: flex;
+    flex-direction: row;
+    align-content: center;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    border-radius: 10px;
+    color: #000;
+    font-weight: 500;
+    word-wrap: break-word;
+    font-size: 15px;
+    font-family: Inter, sans-serif;
+}
+
+.nav-menu-user:hover {
     background: #f0f0f0;
 }
 
-.nav-menu__item--active {
+.nav-menu-link:hover {
+    background: #f0f0f0;
+}
+
+.nav-menu-link-active {
     background: #15386c;
 }
 
-.nav-menu__item--active:hover {
+.nav-menu-link-active:hover {
     background: #15386c;
 }
 
-.nav-menu__label {
+.nav-menu-link-text {
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -73,23 +103,12 @@
     word-wrap: break-word;
 }
 
-.nav-menu__label--active {
+.nav-menu-link-text-active {
     color: #fff;
-    font-weight: 700;
+    font-weight: 900;
 }
 
-.nav-menu__account {
-    width: 130px;
-    align-self: stretch;
-    padding: 0 12px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    overflow: hidden;
-    background: transparent;
-}
-
-.nav-menu__avatar {
+.nav-menu-user-avatar {
     width: 35px;
     height: 35px;
     object-fit: cover;
@@ -97,7 +116,7 @@
     border: 1px solid #ccc;
 }
 
-.nav-menu__logout-btn {
+.nav-menu-logout {
     border: none;
     background: transparent;
     padding: 0;
@@ -108,8 +127,7 @@
     font-weight: 500;
 }
 
-.nav-menu__logout-btn:hover {
-    opacity: 0.8;
+.nav-menu-logout:hover {
 }
 
 @media (max-width: 1000px) {
@@ -119,7 +137,7 @@
         align-items: stretch;
     }
 
-    .nav-menu__current-page {
+    .nav-menu-title {
         display: flex;
         align-items: center;
         min-width: 0;
@@ -133,35 +151,35 @@
         text-overflow: ellipsis;
     }
 
-    .nav-menu__burger {
+    .nav-menu-toggle {
         display: inline-flex;
         align-items: center;
         justify-content: center;
         margin-left: auto;
     }
 
-    .nav-menu__items,
-    .nav-menu__account {
+    .nav-menu-links,
+    .nav-menu-actions {
         display: none;
         width: 100%;
         background: #fff;
     }
 
-    .nav-menu--open {
+    .nav-menu-open {
         height: auto;
     }
 
-    .nav-menu--open .nav-menu__items {
+    .nav-menu-open .nav-menu-links {
         display: flex;
         flex-direction: column;
     }
 
-    .nav-menu--open .nav-menu__item {
+    .nav-menu-open .nav-menu-link {
         width: 100%;
         min-height: 50px;
     }
 
-    .nav-menu--open .nav-menu__account {
+    .nav-menu-open .nav-menu-actions {
         display: flex;
         width: 100%;
         min-height: 50px;

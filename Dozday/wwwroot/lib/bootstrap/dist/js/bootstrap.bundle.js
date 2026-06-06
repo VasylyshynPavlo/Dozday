@@ -2127,7 +2127,7 @@
         };
     }
 
-    function mergePaddingObject(paddingObject) {
+    function mergePaddbject(paddingObject) {
         return Object.assign({}, getFreshSideObject(), paddingObject);
     }
 

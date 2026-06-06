@@ -21,12 +21,9 @@ main {
     }
 }*/
 
-@media (min-width: 641px) {
-    .top-nav {
-        position: sticky;
-        top: 0;
-        z-index: 1;
-    }
+.top-nav {
+    z-index: 100;
+    position: sticky;
 }
 
 #blazor-error-ui {

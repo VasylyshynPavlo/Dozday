@@ -22,4 +22,7 @@ public interface IUserRepository
 
     Task<int> DeleteAsync(Guid id);
     Task<int> DeleteRangeByEmailAsync(string email);
+
+    Task<bool> IsAdmin(Guid id);
+    Task<IEnumerable<User>> SearchAsync(string text);
 }

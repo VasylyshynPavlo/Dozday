@@ -155,3 +155,15 @@
         transform: translateY(0) scale(1);
     }
 }
+
+.event-details-button {
+    margin-top: 16px;
+    padding: 10px 20px;
+    background-color: transparent;
+    color: var(--text-white);
+    font-weight: 600;
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+    width: 100%;
+    border: none;
+}

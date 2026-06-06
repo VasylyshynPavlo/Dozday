@@ -6,9 +6,12 @@
 @inject IJSRuntime JS
 @inject NavigationManager Navigation
 @using Dozday.Core.Interfaces
+@using Dozday.Services.Services
 @using Dozday.Core.Models
 @using Microsoft.Extensions.Options
 @implements IAsyncDisposable
+@using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage
+@inject ProtectedSessionStorage ProtectedSession
 
 <PageTitle>Вхід — Dozday</PageTitle>
 
@@ -35,6 +38,9 @@
                 <p>Для авторизації використовуйте кнопку <strong>Google</strong>.</p>
                 <p>Дозволено вхід лише з акаунтів корпоративної пошти НУВГП у домені <strong>nuwm.edu.ua</strong>.</p>
             </div>
+            <div href="#" class="info-attention">
+                Сайт створений студентом групи ІПЗ-22 Василишином П.Т. у рамках курсової роботи. Сайт не є офіційним ресурсом університету та не має жодного відношення до офіційної діяльності навчального закладу.
+            </div>
 
             @if (_isLoginInProgress)
             {
@@ -58,6 +64,14 @@
             return;
         }
 
+        var result = await JS.InvokeAsync<string?>("sessionStorage.getItem", "auth_message");
+        if (!string.IsNullOrWhiteSpace(result))
+        {
+            _errorMessage = result;
+            await JS.InvokeVoidAsync("sessionStorage.removeItem", "auth_message");
+            StateHasChanged();
+        }
+
         var existingToken = await JS.InvokeAsync<string?>("auth.getToken");
         if (!string.IsNullOrWhiteSpace(existingToken))
         {
@@ -66,13 +80,21 @@
         }
 
         var clientId = GoogleAuthOptions.Value.SecretKey;
+#if DEBUG
         if (string.IsNullOrWhiteSpace(clientId))
         {
             _errorMessage = "Google Client ID не налаштований.";
             StateHasChanged();
             return;
         }
-
+#else
+        if (string.IsNullOrWhiteSpace(clientId))
+        {
+            _errorMessage = "Помилка входу.";
+            StateHasChanged();
+            return;
+        }
+#endif
         _dotNetRef = DotNetObjectReference.Create(this);
     }
 
@@ -82,11 +104,21 @@
         {
             _errorMessage = null;
             var clientId = GoogleAuthOptions.Value.SecretKey;
+#if DEBUG
             if (string.IsNullOrWhiteSpace(clientId))
             {
                 _errorMessage = "Google Client ID не налаштований.";
+                StateHasChanged();
                 return;
             }
+#else
+            if (string.IsNullOrWhiteSpace(clientId))
+            {
+                _errorMessage = "Помилка входу.";
+                StateHasChanged();
+                return;
+            }
+#endif
 
             if (_dotNetRef is null)
             {
@@ -124,7 +156,11 @@
         }
         catch (Exception ex)
         {
+#if DEBUG
             _errorMessage = $"Помилка входу через Google: {ex.Message}";
+#else
+            _errorMessage = "Помилка входу через Google.";  
+#endif
             _isLoginInProgress = false;
             StateHasChanged();
         }

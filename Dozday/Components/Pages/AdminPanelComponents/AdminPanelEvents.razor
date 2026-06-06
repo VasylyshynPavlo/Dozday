@@ -1,0 +1,172 @@
+﻿@using AutoMapper
+@using Dozday.Core.DTOs
+@using Dozday.Core.Enums
+@using Dozday.Core.Interfaces
+@using Dozday.Core.Models
+@using Dozday.Services.Services
+@inject IEventService EventService
+@inject IMapper _mapper
+@inject GlobalStorageService GlobalStorageService
+
+<div class="admin-section">
+    <form class="search-bar-rounded search-bar w-60p-adaptive align-self-center" @onsubmit:preventDefault>
+        <input type="text" class="admin-search-term" placeholder="Пошук події" @bind-value="searchTerm" @bind-value:event="oninput" @bind-value:after="Search" />
+    </form>
+    <div class="admin-tabs">
+        <button type="button" class="button flex-1" disabled="@(activePage == 1)" @onclick="() => ChangePage(1)">Усі</button>
+        <button type="button" class="button flex-1" disabled="@(activePage == 2)" @onclick="() => ChangePage(2)">Майбутні</button>
+        <button type="button" class="button flex-1" disabled="@(activePage == 3)" @onclick="() => ChangePage(3)">Зараз</button>
+        <button type="button" class="button flex-1" disabled="@(activePage == 4)" @onclick="() => ChangePage(4)">Минулі</button>
+    </div>
+    <div class="admin-list-header">
+        <h4>Події</h4>
+        <span title="Кількість подій" class="counter">@events.Count</span>
+    </div>
+    <div class="admin-list">
+        @if (events.Count == 0)
+        {
+            <div class="admin-empty">Подій ще немає.</div>
+        }
+        else
+        {
+            @foreach (var evt in events)
+            {
+                <div class="card event-card">
+                    <div class="item-card-header">
+                        <div class="item-card-title">@evt.Summary</div>
+                        <div class="item-card-actions">
+                            <span class="item-card-type">@GetTypeLabel(evt.Type)</span>
+                        </div>
+                    </div>
+                    <div class="item-card-dates">
+                        <span>@FormatDateTime(evt.Start)</span>
+                        <span class="item-card-separator">—</span>
+                        <span>@FormatDateTime(evt.End)</span>
+                    </div>
+                    <div class="w-100p">
+                        <div class="item-card-meta-row">
+                            <span class="item-card-meta-label">Id</span>
+                            <span>@(string.IsNullOrWhiteSpace(evt.Id) ? "Помилка" : evt.Id)</span>
+                        </div>
+                        <div class="item-card-meta-row">
+                            <span class="item-card-meta-label">Організатор</span>
+                            <span>@(string.IsNullOrWhiteSpace(evt.OrganizatorName) ? "Не вказано" : evt.OrganizatorName)</span>
+                        </div>
+                        <div class="item-card-meta-row">
+                            <span class="item-card-meta-label">Локація</span>
+                            <span>@(string.IsNullOrWhiteSpace(evt.Location) ? "Не вказано" : evt.Location)</span>
+                        </div>
+                        <div class="item-card-meta-row">
+                            <span class="item-card-meta-label">Опис</span>
+                            <span>@(string.IsNullOrWhiteSpace(evt.Description) ? "Не вказано" : evt.Description)</span>
+                        </div> 
+                        <div class="item-card-meta-row">
+                            <span class="item-card-meta-label">Планують прийти</span>
+                            <span>@evt.Subscribers</span>
+                        </div>
+                        <div class="item-card-meta-row">
+                            <span class="item-card-meta-label">Посилання</span>
+                            @if (string.IsNullOrWhiteSpace(evt.MeetingLink))
+                            {
+                                <span>Не вказано</span>
+                            }
+                            else
+                            {
+                                <a class="item-card-link" href="@evt.MeetingLink" target="_blank" rel="noopener noreferrer">Перейти</a>
+                            }
+                        </div>
+                    </div>
+                    <button class="button button-red w-100p">Видалити</button>
+                </div>
+            }
+        }
+    </div>
+</div>
+
+@code {
+    private List<EventDto> events = new();
+    private string? currentUserId = string.Empty;
+    private string searchTerm = string.Empty;
+    private int activePage = 1;
+
+    protected override void OnInitialized()
+    {
+        GlobalStorageService.OnTokenChanged += OnTokenChanged;
+    }
+
+    private async void OnTokenChanged()
+    {
+        currentUserId = GlobalStorageService.UserId;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        GlobalStorageService.OnTokenChanged -= OnTokenChanged;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        events = _mapper.Map<List<EventDto>>((await EventService.GetEventsAsync<Event>(u => u, u => true, -1, -1)).Items);
+
+    }
+
+    private async Task Search()
+    {
+        if (!string.IsNullOrWhiteSpace(searchTerm) && searchTerm.Length >= 3)
+        {
+            activePage = 1;
+            events = _mapper.Map<List<EventDto>>(await EventService.SearchAsync(searchTerm));
+        }
+        else
+        {
+            activePage = 1;
+            events = _mapper.Map<List<EventDto>>((await EventService.GetEventsAsync<Event>(u => u, u => true, -1, -1)).Items);
+        }
+
+        StateHasChanged();
+    }
+
+    private static string GetRoleLabel(string roles)
+    {
+        return roles.Replace("Administrator", "Адміністратор")
+                    .Replace("Teacher", "Викладач")
+                    .Replace("None", "Користувач");
+    }
+
+    private async Task ChangePage(int page)
+    {
+        var now = DateTime.UtcNow;
+        switch (page)
+        {
+            case 1:
+                events = _mapper.Map<List<EventDto>>((await EventService.GetEventsAsync<Event>(u => u, u => true, -1, -1)).Items);
+                break;
+            case 2:
+                events = _mapper.Map<List<EventDto>>((await EventService.GetEventsAsync<Event>(u => u, u => u.Start > now, -1, -1)).Items);
+                break;
+            case 3:
+                events = _mapper.Map<List<EventDto>>((await EventService.GetEventsAsync<Event>(u => u, u => u.Start <= now && u.End > now, -1, -1)).Items);
+                break;
+            case 4:
+                events = _mapper.Map<List<EventDto>>((await EventService.GetEventsAsync<Event>(u => u, u => u.End <= now, -1, -1)).Items);
+                break;
+            default:
+                break;
+        }
+        activePage = page;
+        StateHasChanged();
+    }
+
+    private static string GetTypeLabel(EventType type)
+        => type switch
+        {
+            EventType.Online => "Онлайн",
+            EventType.Offline => "Очно",
+            EventType.Hybrid => "Гібрид",
+            _ => "Не визначено"
+        };
+
+    private static string FormatDateTime(DateTime dateTime)
+   => dateTime.ToLocalTime().ToString("dd.MM.yyyy HH:mm");
+}

@@ -1,6 +1,6 @@
 ﻿.calendar {
     position: relative;
-    height: calc(100dvh - 50px);
+    height: calc(100svh - 50px);
     display: flex;
     align-items: center;
     justify-content: center;

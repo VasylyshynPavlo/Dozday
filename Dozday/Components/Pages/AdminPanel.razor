@@ -1,11 +1,30 @@
 ﻿@page "/admin/admin-panel"
+@using Dozday.Components.Pages.AdminPanelComponents
+@attribute [StreamRendering]
 
-<div class="admin-bg">
-    <div class="admin-body">
+<PageTitle>Адміністратор</PageTitle>
 
+<div class="admin-body">
+    <div class="admin-tabs-pages">
+        <button type="button" class="button flex-1" disabled="@(activePage == 1)" @onclick="() => ChangePage(1)">Користувачі</button>
+        <button type="button" class="button flex-1" disabled="@(activePage == 2)" @onclick="() => ChangePage(2)">Події</button>
+        <button type="button" class="button flex-1" disabled="@(activePage == 3)" @onclick="() => ChangePage(3)">Допомога</button>
+    </div>
+    <div class="admin-pages">
+        <div class="admin-column" style="@(activePage == 1 ? "" : "display: none;")">
+            <AdminPanelUsers />
+        </div>
+        <div class="admin-column" style="@(activePage == 2 ? "" : "display: none;")">
+            <AdminPanelEvents />
+        </div>
+        <div class="admin-column" style="@(activePage == 3 ? "" : "display: none;") ">
+            <AdminPanelHelp />
+        </div>
     </div>
 </div>
 
 @code {
+    private int activePage = 1;
 
+    private async Task ChangePage(int page) => activePage = page;
 }

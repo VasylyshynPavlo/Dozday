@@ -1,0 +1,585 @@
+﻿@page "/teacher-panel"
+@using Dozday.Core.Enums
+@using Dozday.Core.Interfaces
+@using Dozday.Core.Models
+@using Dozday.Data
+@using System.IdentityModel.Tokens.Jwt
+@using System.Security.Claims
+@using Microsoft.EntityFrameworkCore
+@using Dozday.Core.DTOs
+@inject IEventService EventService
+@inject IJSRuntime JS
+
+<div class="teachers-panel-body">
+    <div class="form-body">
+        <form class="form-group" @onsubmit="SaveAsync" @onsubmit:preventDefault>
+            <h4>
+                @(editing ? "Редагування" : "Створення")
+            </h4>
+            <p><span class="field-required">*</span> - обов'язкові поля</p>
+            <label class="form-field">
+                <span>Назва<span class="field-required">*</span></span>
+                <input type="text" placeholder="Назва події" class="@GetFieldClass(hasSummaryError)" @bind="summary"/>
+                <div class="field-error">@summaryError</div>
+            </label>
+            <label class="form-field">
+                <span>Опис<span class="field-required">*</span></span>
+                <textarea rows="3" placeholder="Короткий опис" class="@GetFieldClass(hasDescriptionError)" @bind="description"/>
+                <div class="field-error">@descriptionError</div>
+            </label>
+            <label class="form-field">
+                <span>Локація</span>
+                <input type="text" placeholder="Адреса або аудиторія" class="@GetFieldClass(hasLocationError)" @bind="location" />
+                <div class="field-error">@locationError</div>
+            </label>
+            <label class="form-field">
+                <span>Початок (дата і час)<span class="field-required">*</span></span>
+                <div class="date-time-row">
+                    <InputDate Type="InputDateType.DateTimeLocal" class="@GetFieldClass(hasStartError)" @bind-Value="start" @bind-Value:format="yyyy-MM-ddTHH:mm"/>
+                    <div class="form-field">
+                        <span>Швидкий вибір початку</span>
+                        <select class="quick-select-input" @bind="quickStartPairIndex" @bind:after="ApplyQuickStartPair">
+                            <option value="">Не вибрано</option>
+                            @for (var i = 0; i < PairSchedule.Length; i++)
+                            {
+                                <option value="@i">@FormatPairOption(i, PairSchedule[i].Start)</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+                <div class="field-error">@startError</div>
+            </label>
+            <label class="form-field">
+                <span>Кінець (дата і час)<span class="field-required">*</span></span>
+                <div class="date-time-row">
+                    <InputDate Type="InputDateType.DateTimeLocal" class="@GetFieldClass(hasEndError)" @bind-Value="end" @bind-Value:format="yyyy-MM-ddTHH:mm" />
+                    <div class="form-field">
+                        <span>Швидкий вибір кінця</span>
+                        <select class="quick-select-input" @bind="quickEndPairIndex" @bind:after="ApplyQuickEndPair">
+                            <option value="">Не вибрано</option>
+                            @for (var i = 0; i < PairSchedule.Length; i++)
+                            {
+                                <option value="@i">@FormatPairOption(i, PairSchedule[i].End)</option>
+                            }
+                        </select>
+                    </div>
+                </div>
+                <div class="field-error">@endError</div>
+            </label>
+            <label class="form-field">
+                <span>Посилання на зустріч</span>
+                <input type="url" placeholder="https://" class="@GetFieldClass(hasMeetingLinkError)" @bind-value="meetingLink" @bind-value:event="oninput" @bind-value:after="UpdateType" />
+                <div class="field-error">@meetingLinkError</div>
+            </label>
+            <label class="form-field">
+                <span>Тип <span class="field-hint">(визначається автоматично)</span></span>
+                <select class="@GetFieldClass(hasTypeError)" @bind="selectedType">
+                    <option value="">Не вибрано</option>
+                    <option value="online">Онлайн</option>
+                    <option value="offline">Очно</option>
+                    <option value="hybrid">Онлайн + Очно</option>
+                </select>
+                <div class="field-error">@typeError</div>
+            </label>
+            <div class="form-field-actions">
+                <button type="submit" class="button">@(editing ? "Оновити" : "Зберегти")</button>
+                <button type="button" class="button" @onclick="ClearForm">
+                    @(editing ? "Скасувати" : "Очистити")
+                </button>
+            </div>
+        </form>
+    </div>
+    <div class="events-section">
+        <div class="events-header">
+            <h4>Події</h4>
+            <div class="events-actions">
+                <span title="Кількість подій" class="counter    ">@teacherEvents.Count</span>
+                <button type="button" class="button" @onclick="ReloadEventsAsync" disabled="@(isLoading || isReloading)">
+                    @(isLoading ? "Оновлення..." : isReloading ? $"Зачекайте {@countdownValue}c." : "Оновити")
+                </button>
+            </div>
+        </div>
+        @if (isLoading)
+        {
+            <div class="events-empty">Завантаження...</div>
+        }
+        else if (teacherEvents.Count == 0)
+        {
+            <div class="events-empty">Подій ще немає.</div>
+        }
+        else
+        {
+            <div class="events-grid">
+                @foreach (var evt in teacherEvents)
+                {
+                    <button type="button" class="card card-interactive event-card" @onclick="() => StartEdit(evt)">
+                        <div class="event-card-header">
+                            <div class="event-card-title">@evt.Summary</div>
+                            <div class="event-card-actions">
+                                <span title="Тип події" class="event-card-type">@GetTypeLabel(evt.Type)</span>
+                                <button type="button" class="button button-red" @onclick="() => DeleteEventAsync(evt)" @onclick:stopPropagation>
+                                    Видалити
+                                </button>
+                            </div>
+                        </div>
+                        <div class="event-card-dates">
+                            <span>@FormatDateTime(evt.Start)</span>
+                            <span class="event-card-separator">—</span>
+                            <span>@FormatDateTime(evt.End)</span>
+                        </div>
+                        <div class="event-card-meta">
+                            <div class="event-card-meta-row">
+                                <span class="event-card-meta-label">Локація</span>
+                                <span>@(string.IsNullOrWhiteSpace(evt.Location) ? "Не вказано" : evt.Location)</span>
+                            </div>
+                            <div class="event-card-meta-row">
+                                <span class="event-card-meta-label">Планують прийти</span>
+                                <span>@evt.Subscribers</span>
+                            </div>
+                            <div class="event-card-meta-row">
+                                <span class="event-card-meta-label">Посилання</span>
+                                @if (string.IsNullOrWhiteSpace(evt.MeetingLink))
+                                {
+                                    <span>Не вказано</span>
+                                }
+                                else
+                                {
+                                    <a class="event-card-link" href="@evt.MeetingLink" target="_blank" rel="noopener noreferrer">Перейти</a>
+                                }
+                            </div>
+                        </div>
+                    </button>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private string? location;
+    private string? meetingLink;
+    private string summary = string.Empty;
+    private string description = string.Empty;
+    private DateTime? start;
+    private DateTime? end;
+    private string selectedType = string.Empty;
+    private bool editing = false;
+    private Guid? editingEventId;
+    private List<EventDto> teacherEvents = [];
+    private bool isLoading;
+    private bool showErrors;
+    private bool hasSummaryError;
+    private bool hasDescriptionError;
+    private bool hasLocationError;
+    private bool hasStartError;
+    private bool hasEndError;
+    private bool hasMeetingLinkError;
+    private bool hasTypeError;
+    private string summaryError = string.Empty;
+    private string descriptionError = string.Empty;
+    private string locationError = string.Empty;
+    private string startError = string.Empty;
+    private string endError = string.Empty;
+    private string meetingLinkError = string.Empty;
+    private string typeError = string.Empty;
+    private bool isReloading;
+    private string quickStartPairIndex = string.Empty;
+    private string quickEndPairIndex = string.Empty;
+    private static readonly (TimeSpan Start, TimeSpan End)[] PairSchedule =
+    [
+        (new TimeSpan(8, 0, 0), new TimeSpan(9, 20, 0)),
+        (new TimeSpan(9, 40, 0), new TimeSpan(11, 0, 0)),
+        (new TimeSpan(11, 15, 0), new TimeSpan(12, 35, 0)),
+        (new TimeSpan(13, 0, 0), new TimeSpan(14, 20, 0)),
+        (new TimeSpan(14, 35, 0), new TimeSpan(15, 55, 0)),
+        (new TimeSpan(16, 5, 0), new TimeSpan(17, 25, 0))
+    ];
+    private int countdownValue;
+
+    private void UpdateType()
+    {
+        var hasLocation = !string.IsNullOrWhiteSpace(location);
+        var hasLink = !string.IsNullOrWhiteSpace(meetingLink);
+
+        selectedType = hasLocation && hasLink
+            ? "hybrid"
+            : hasLocation
+                ? "offline"
+                : hasLink
+                    ? "online"
+                    : string.Empty;
+    }
+
+    private void ClearForm()
+    {
+        editingEventId = null;
+        summary = string.Empty;
+        description = string.Empty;
+        location = null;
+        meetingLink = null;
+        start = null;
+        end = null;
+        selectedType = string.Empty;
+        showErrors = false;
+        quickStartPairIndex = "";
+        quickEndPairIndex = "";
+
+        ResetErrors();
+    }
+
+    private async Task SaveAsync()
+    {
+        showErrors = true;
+        ValidateForm();
+        if (HasValidationErrors())
+        {
+            return;
+        }
+        var utcStart = ToUtc(start.Value);
+        var utcEnd = ToUtc(end.Value);
+        var token = await JS.InvokeAsync<string?>("auth.getToken");
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return;
+        }
+
+        var userId = GetUserIdFromToken(token);
+        if (string.IsNullOrEmpty(userId))
+        {
+            return;
+        }
+
+        var eventType = selectedType switch
+        {
+            "online" => EventType.Online,
+            "offline" => EventType.Offline,
+            "hybrid" => EventType.Hybrid,
+            _ => EventType.None
+        };
+
+        if (editingEventId is null)
+        {
+            var eventDto = new CreateEventDto
+            {
+                Summary = summary,
+                Description = description,
+                Location = location,
+                Start = utcStart,
+                End = utcEnd,
+                OrganizatorId = userId,
+                Type = eventType,
+                MeetingLink = meetingLink
+            };
+            await EventService.AddAsync(eventDto);
+        }
+        else
+        {
+            var eventDto = new EventDto
+            {
+                Id = editingEventId.Value.ToString(),
+                Summary = summary,
+                Description = description,
+                Location = location,
+                Start = utcStart,
+                End = utcEnd,
+                OrganizatorId = userId,
+                OrganizatorName = string.Empty,
+                MeetingLink = meetingLink,
+                Type = eventType
+            };
+            await EventService.UpdateAsync(eventDto, userId);
+        }
+
+        await LoadTeacherEventsAsync();
+        ClearForm();
+    }
+
+    private async Task DeleteEventAsync(EventDto? evt = null)
+    {
+        var token = await JS.InvokeAsync<string?>("auth.getToken");
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return;
+        }
+
+        var userId = GetUserIdFromToken(token);
+        if (string.IsNullOrEmpty(userId))
+        {
+            return;
+        }
+        var eventId = evt?.Id;
+        if (string.IsNullOrWhiteSpace(eventId) && editingEventId is not null)
+        {
+            eventId = editingEventId.Value.ToString();
+        }
+
+        if (string.IsNullOrWhiteSpace(eventId))
+        {
+            return;
+        }
+
+        await EventService.DeleteAsync(eventId, userId);
+        await LoadTeacherEventsAsync();
+        ClearForm();
+    }
+
+    private async Task ReloadEventsAsync()
+    {
+        if (isReloading || isLoading)
+        {
+            return;
+        }
+
+        await LoadTeacherEventsAsync();
+        isReloading = true;
+        await InvokeAsync(StateHasChanged);
+        await StartCountdownAsync(5);
+        isReloading = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void StartEdit(EventDto evt)
+    {
+        editing = true;
+        if (!Guid.TryParse(evt.Id, out var eventId))
+        {
+            return;
+        }
+
+        editingEventId = eventId;
+        summary = evt.Summary;
+        description = evt.Description;
+        location = evt.Location;
+        meetingLink = evt.MeetingLink;
+        start = evt.Start.ToLocalTime();
+        end = evt.End.ToLocalTime();
+        selectedType = evt.Type switch
+        {
+            EventType.Online => "online",
+            EventType.Offline => "offline",
+            EventType.Hybrid => "hybrid",
+            _ => string.Empty
+        };
+        quickStartPairIndex = string.Empty;
+        quickEndPairIndex = string.Empty;
+        showErrors = false;
+        ResetErrors();
+    }
+
+    private void ClearQuickSelection()
+    {
+        if (!string.IsNullOrWhiteSpace(quickStartPairIndex) || !string.IsNullOrWhiteSpace(quickEndPairIndex))
+        {
+            quickStartPairIndex = string.Empty;
+            quickEndPairIndex = string.Empty;
+        }
+    }
+
+    private void ApplyQuickStartPair()
+    {
+        if (!TryGetPairIndex(quickStartPairIndex, out var index))
+        {
+            return;
+        }
+
+        start = ApplyQuickTime(start, PairSchedule[index].Start);
+    }
+
+    private void ApplyQuickEndPair()
+    {
+        if (!TryGetPairIndex(quickEndPairIndex, out var index))
+        {
+            return;
+        }
+
+        end = ApplyQuickTime(end, PairSchedule[index].End);
+    }
+
+    private void ValidateForm()
+    {
+        ResetErrors();
+
+        hasSummaryError = showErrors && string.IsNullOrWhiteSpace(summary);
+        if (hasSummaryError)
+        {
+            summaryError = "Вкажіть назву події.";
+        }
+
+        hasDescriptionError = showErrors && string.IsNullOrWhiteSpace(description);
+        if (hasDescriptionError)
+        {
+            descriptionError = "Вкажіть опис події.";
+        }
+
+        hasStartError = showErrors && start is null;
+        if (hasStartError)
+        {
+            startError = "Оберіть дату та час початку.";
+        }
+
+        hasEndError = showErrors && (end is null || (start is not null && end is not null && end <= start));
+        if (hasEndError)
+        {
+            endError = end is null
+                ? "Оберіть дату та час завершення."
+                : "Час завершення має бути пізніше за початок.";
+        }
+
+        hasMeetingLinkError = showErrors && !string.IsNullOrWhiteSpace(meetingLink)
+            && !Uri.TryCreate(meetingLink, UriKind.Absolute, out _);
+        if (hasMeetingLinkError)
+        {
+            meetingLinkError = "Вкажіть коректне посилання.";
+        }
+
+        hasLocationError = false;
+        hasTypeError = false;
+    }
+
+    private bool HasValidationErrors()
+        => hasSummaryError || hasDescriptionError || hasStartError || hasEndError || hasMeetingLinkError || hasLocationError || hasTypeError;
+
+    private void ResetErrors()
+    {
+        hasSummaryError = false;
+        hasDescriptionError = false;
+        hasLocationError = false;
+        hasStartError = false;
+        hasEndError = false;
+        hasMeetingLinkError = false;
+        hasTypeError = false;
+        summaryError = string.Empty;
+        descriptionError = string.Empty;
+        locationError = string.Empty;
+        startError = string.Empty;
+        endError = string.Empty;
+        meetingLinkError = string.Empty;
+        typeError = string.Empty;
+    }
+
+    private static string GetFieldClass(bool hasError)
+        => hasError ? "input-invalid" : string.Empty;
+
+    private static string FormatDateTime(DateTime dateTime)
+        => dateTime.ToLocalTime().ToString("dd.MM.yyyy HH:mm");
+
+    private static string FormatPairOption(int index, TimeSpan time)
+        => $"{index + 1} пара — {DateTime.Today.Add(time):HH:mm}";
+
+    private static DateTime ApplyQuickTime(DateTime? current, TimeSpan time)
+        => (current?.Date ?? DateTime.Today).Add(time);
+
+    private static bool TryGetPairIndex(string value, out int index)
+    {
+        if (!int.TryParse(value, out index))
+        {
+            return false;
+        }
+
+        return index >= 0 && index < PairSchedule.Length;
+    }
+
+    private static DateTime? CombineDateTime(DateTime? datePart, TimeOnly? timePart)
+    {
+        if (datePart is null || timePart is null)
+        {
+            return null;
+        }
+
+        return datePart.Value.Date.Add(timePart.Value.ToTimeSpan());
+    }
+
+    private static DateTime ToUtc(DateTime value)
+        => value.Kind switch
+        {
+            DateTimeKind.Utc => value,
+            DateTimeKind.Local => value.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(value, DateTimeKind.Local).ToUniversalTime()
+        };
+
+    private static string GetTypeLabel(EventType type)
+        => type switch
+        {
+            EventType.Online => "Онлайн",
+            EventType.Offline => "Очно",
+            EventType.Hybrid => "Гібрид",
+            _ => "Не визначено"
+        };
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        await LoadTeacherEventsAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task LoadTeacherEventsAsync()
+    {
+        isLoading = true;
+
+        try
+        {
+            var token = await JS.InvokeAsync<string?>("auth.getToken");
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                teacherEvents = [];
+                return;
+            }
+
+            var userId = GetUserIdFromToken(token);
+            if (!Guid.TryParse(userId, out var teacherId))
+            {
+                teacherEvents = [];
+                return;
+            }
+
+            var elements = await EventService.GetEventsOnlyAsync(u => u.OrganizatorId == teacherId, -1, -1);
+            teacherEvents = elements.Items;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Помилка завантаження подій: {ex.Message}");
+            teacherEvents = [];
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private static string? GetUserIdFromToken(string token)
+    {
+        try
+        {
+            var jwt = new JwtSecurityTokenHandler().ReadJwtToken(token);
+            return jwt.Claims.FirstOrDefault(c =>
+                c.Type == ClaimTypes.NameIdentifier ||
+                c.Type == JwtRegisteredClaimNames.NameId ||
+                c.Type == "nameid" ||
+                c.Type == JwtRegisteredClaimNames.Sub ||
+                c.Type == "sub")?.Value;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private async Task StartCountdownAsync(int startValue)
+    {
+        countdownValue = startValue;
+        await InvokeAsync(StateHasChanged);
+
+        while (countdownValue > 0)
+        {
+            await Task.Delay(1000);
+            countdownValue--;
+
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+}

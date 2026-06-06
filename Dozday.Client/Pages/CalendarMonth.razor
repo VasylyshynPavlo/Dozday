@@ -1,1 +1,303 @@
-<div class="calendar-month"></div>
+@using System.Globalization
+@using Dozday.Core.DTOs
+@using Dozday.Core.Enums
+@using Dozday.Core.Models
+@using Dozday.Core.Utils
+@using Microsoft.AspNetCore.Components
+@using System.Net.Http.Headers
+@using System.Net.Http.Json
+@inject HttpClient Http
+@inject IJSRuntime JS
+
+<div class="calendar-month">
+    @foreach (var day in WeekdayLabels)
+    {
+        <div class="calendar-month__weekday" style="@(day == DayOfWeek.Saturday || day == DayOfWeek.Sunday ? "color: #a34646;" : "")">
+            @culture.DateTimeFormat.AbbreviatedDayNames[(int)day]
+        </div>
+    }
+
+    @foreach (var day in monthDays)
+    {
+        var dayEvents = monthEventLookup.TryGetValue(day, out var eventsForDay)
+            ? eventsForDay
+            : [];
+
+        <div class="calendar-month__day @(day.Month != Month.Month ? "calendar-month__day--outside" : string.Empty) @(IsWeekend(day) ? "calendar-month__day--weekend" : string.Empty) @(IsToday(day) ? "calendar-month__day--today" : string.Empty)">
+            <div class="calendar-month__date">@day.Day</div>
+            <div class="calendar-month__events">
+                @foreach (var viewEvent in dayEvents)
+                {
+                    <button type="button" class="calendar-month__event" style="@viewEvent.Style" title="@viewEvent.Event.Summary" @onclick="() => OpenEventDetails(viewEvent)">
+                        <span class="calendar-month__event-title">@viewEvent.Event.Summary</span>
+                        <span class="calendar-month__event-time">@viewEvent.TimeText</span>
+                    </button>
+                }
+            </div>
+        </div>
+    }
+</div>
+
+@if (selectedEvent is not null)
+{
+    <div class="event-details-backdrop" @onclick="CloseEventDetails">
+        <div class="event-details" style="@GetEventDetailsStyle(selectedEvent)" @onclick:stopPropagation="true">
+            <button type="button" class="event-details__close" @onclick="CloseEventDetails">✕</button>
+            <h3 class="event-details__title">@selectedEvent.Summary</h3>
+            @if (!string.IsNullOrWhiteSpace(selectedEvent.OrganizatorName))
+            {
+                <div class="event-details__row"><strong>Викладач:</strong> @selectedEvent.OrganizatorName</div>
+            }
+            <div class="event-details__row"><strong>Формат:</strong> @GetEventTypeLabel(selectedEvent.Type)</div>
+            <div class="event-details__row"><strong>Початок:</strong> @selectedEvent.Start.ToString("dd.MM.yyyy HH:mm", culture)</div>
+            <div class="event-details__row"><strong>Кінець:</strong> @selectedEvent.End.ToString("dd.MM.yyyy HH:mm", culture)</div>
+            @if (!string.IsNullOrWhiteSpace(selectedEvent.Location))
+            {
+                <div class="event-details__row"><strong>Локація:</strong> @selectedEvent.Location</div>
+            }
+            @if (!string.IsNullOrWhiteSpace(selectedEvent.Description))
+            {
+                <div class="event-details__row"><strong>Опис:</strong> @selectedEvent.Description</div>
+            }
+            @if (!string.IsNullOrWhiteSpace(selectedEvent.MeetingLink))
+            {
+                <div class="event-details__row"><a href="@selectedEvent.MeetingLink" target="_blank" rel="noopener noreferrer">Посилання на зустріч</a></div>
+            }
+            <div class="event-details__row"><strong>Планують прийти: </strong> @selectedEvent.Subscribers</div>
+            <button type="button" class="event-details-button" @onclick="ToggleEventSubscriptionAsync" disabled="@isSubscriptionLoading">
+                @(isSubscribed ? "Не планую прийти" : "Планую прийти")
+            </button>
+            <div class="event-details__row" style="opacity: 0.5; font-size: 10px; bottom: -5px; position: absolute; font-style: italic;"><strong>Ідентифікатор:</strong> @selectedEvent.Id</div>
+        </div>
+    </div>
+}
+
+@code {
+    private readonly CultureInfo culture = new("uk-UA");
+    private readonly List<DateOnly> monthDays = [];
+    [Parameter]
+    public IReadOnlyList<EventDto> Events { get; set; } = [];
+
+    private readonly Dictionary<DateOnly, List<MonthEventView>> monthEventLookup = [];
+    private EventDto? selectedEvent;
+    private bool isSubscribed;
+    private bool isSubscriptionLoading;
+
+    [Parameter]
+    public DateOnly Month { get; set; } = DateOnly.FromDateTime(DateTime.Now);
+
+    private DayOfWeek[] WeekdayLabels =>
+    [
+        DayOfWeek.Monday,
+        DayOfWeek.Tuesday,
+        DayOfWeek.Wednesday,
+        DayOfWeek.Thursday,
+        DayOfWeek.Friday,
+        DayOfWeek.Saturday,
+        DayOfWeek.Sunday
+    ];
+
+    protected override void OnInitialized()
+    {
+        BuildMonth();
+    }
+
+    protected override void OnParametersSet()
+    {
+        BuildMonth();
+    }
+
+    private void BuildMonth()
+    {
+        BuildMonthDays();
+        BuildMonthEventViews();
+    }
+
+
+    private void BuildMonthDays()
+    {
+        monthDays.Clear();
+
+        var monthStart = new DateOnly(Month.Year, Month.Month, 1);
+        var monthEnd = monthStart.AddMonths(1).AddDays(-1);
+
+        var gridStart = GetWeekStart(monthStart);
+        var gridEnd = GetWeekEnd(monthEnd);
+
+        for (var day = gridStart; day <= gridEnd; day = day.AddDays(1))
+        {
+            monthDays.Add(day);
+        }
+    }
+
+    private void BuildMonthEventViews()
+    {
+        monthEventLookup.Clear();
+
+        var gridDays = monthDays.ToHashSet();
+
+        foreach (var calendarEvent in Events)
+        {
+            if (calendarEvent.End <= calendarEvent.Start)
+            {
+                continue;
+            }
+
+            var eventStart = DateOnly.FromDateTime(calendarEvent.Start);
+            var eventEnd = DateOnly.FromDateTime(calendarEvent.End);
+
+            for (var day = eventStart; day <= eventEnd; day = day.AddDays(1))
+            {
+                if (!gridDays.Contains(day))
+                {
+                    continue;
+                }
+
+                if (!monthEventLookup.TryGetValue(day, out var dayList))
+                {
+                    dayList = [];
+                    monthEventLookup[day] = dayList;
+                }
+
+                dayList.Add(new MonthEventView(
+                    calendarEvent,
+                    BuildEventTimeText(calendarEvent, day),
+                    CalendarEventUtils.BuildEventColorStyle(calendarEvent)));
+            }
+        }
+
+        foreach (var dayList in monthEventLookup.Values)
+        {
+            dayList.Sort((left, right) => left.Event.Start.CompareTo(right.Event.Start));
+        }
+    }
+
+    private static DateOnly GetWeekStart(DateOnly date)
+    {
+        var diff = (7 + (date.DayOfWeek - DayOfWeek.Monday)) % 7;
+        return date.AddDays(-diff);
+    }
+
+    private static DateOnly GetWeekEnd(DateOnly date)
+    {
+        var diff = (7 - (date.DayOfWeek - DayOfWeek.Monday)) % 7;
+        return date.AddDays(diff == 0 ? 6 : diff - 1);
+    }
+
+    private static bool IsWeekend(DateOnly date)
+        => date.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday;
+
+    private static bool IsToday(DateOnly date)
+        => date == DateOnly.FromDateTime(DateTime.Now);
+
+    private string BuildEventTimeText(EventDto calendarEvent, DateOnly day)
+    {
+        var dayStart = day.ToDateTime(new TimeOnly(0, 0));
+        var dayEnd = day.ToDateTime(new TimeOnly(23, 59));
+        var segmentStart = calendarEvent.Start > dayStart ? calendarEvent.Start : dayStart;
+        var segmentEnd = calendarEvent.End < dayEnd ? calendarEvent.End : dayEnd;
+
+        if (segmentEnd <= segmentStart)
+        {
+            segmentEnd = segmentStart.AddMinutes(1);
+        }
+
+        return $"{segmentStart:HH:mm}-{segmentEnd:HH:mm}";
+    }
+
+    private void OpenEventDetails(MonthEventView viewEvent)
+    {
+        selectedEvent = viewEvent.Event;
+        _ = LoadSubscriptionStatusAsync();
+    }
+
+    private void CloseEventDetails()
+    {
+        selectedEvent = null;
+        isSubscribed = false;
+        isSubscriptionLoading = false;
+    }
+
+    private static string GetEventDetailsStyle(EventDto calendarEvent)
+    {
+        return CalendarEventUtils.BuildEventDetailsStyle(calendarEvent);
+    }
+
+    private static string GetEventTypeLabel(EventType type) => CalendarEventUtils.GetEventTypeLabel(type);
+
+    private static string GetEventTypeClass(EventType type) => CalendarEventUtils.GetEventTypeClass(type);
+
+    private async Task LoadSubscriptionStatusAsync()
+    {
+        if (selectedEvent is null)
+        {
+            return;
+        }
+
+        isSubscriptionLoading = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var token = await JS.InvokeAsync<string?>("auth.getToken");
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                isSubscribed = false;
+                return;
+            }
+
+            Http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            var response = await Http.GetAsync($"api/UserEventSubscription/status?eventId={Uri.EscapeDataString(selectedEvent.Id)}");
+            if (!response.IsSuccessStatusCode)
+            {
+                isSubscribed = false;
+                return;
+            }
+
+            var result = await response.Content.ReadFromJsonAsync<bool>();
+            isSubscribed = result;
+        }
+        finally
+        {
+            isSubscriptionLoading = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task ToggleEventSubscriptionAsync()
+    {
+        if (selectedEvent is null)
+        {
+            return;
+        }
+
+        isSubscriptionLoading = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var token = await JS.InvokeAsync<string?>("auth.getToken");
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                return;
+            }
+
+            Http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            var response = await Http.PostAsync($"api/UserEventSubscription/toggle?eventId={Uri.EscapeDataString(selectedEvent.Id)}", null);
+            if (!response.IsSuccessStatusCode)
+            {
+                return;
+            }
+
+            var result = await response.Content.ReadFromJsonAsync<bool>();
+            isSubscribed = result;
+        }
+        finally
+        {
+            isSubscriptionLoading = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private sealed record MonthEventView(EventDto Event, string TimeText, string Style);
+}

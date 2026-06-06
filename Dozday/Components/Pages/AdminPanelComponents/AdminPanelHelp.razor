@@ -1,0 +1,229 @@
+﻿@using AutoMapper
+@using Dozday.Core.DTOs
+@using Dozday.Core.Enums
+@using Dozday.Core.Interfaces
+@using Dozday.Core.Models
+@using Dozday.Services.Services
+@using Markdig
+@inject IQualityAndAssuranceService QualityAndAssuranceService
+@inject IMapper _mapper
+@inject GlobalStorageService GlobalStorageService
+
+<div class="admin-section">
+    <form class="search-bar-rounded search-bar w-60p-adaptive align-self-center" @onsubmit:preventDefault>
+        <input type="text" class="admin-search-term" placeholder="Пошук" @bind-value="searchTerm" @bind-value:event="oninput" @bind-value:after="Search" />
+    </form>
+    <div class="admin-list-header">
+        <h4>Допомога</h4>
+        <span title="Кількість" class="counter">@qualityAndAssurances.Count</span>
+    </div>
+    <div class="section">
+        <div class="form-body">
+            <form class="form-group" @onsubmit="Save" @onsubmit:preventDefault>
+                <p><span class="field-required">*</span> - обов'язкові поля</p>
+                <label class="form-field">
+                    <span>Запитання<span class="field-required">*</span></span>
+                    <input type="text" placeholder="Як зробити..." class="@GetFieldClass(hasTitleError)" @bind="title" />
+                    <div class="field-error">@titleError</div>
+                </label>
+                <label class="form-field">
+                    <span>Відповідь<span class="field-required">*</span></span>
+                    <textarea rows="3" placeholder="Натисність..." class="@GetFieldClass(hasAnswerError)" @bind="answer" />
+                    <div class="field-error">@answerError</div>
+                </label>
+                <div class="form-field-actions">
+                    <button type="submit" class="button">@(editing ? "Оновити" : "Зберегти")</button>
+                    <button type="button" class="button" @onclick="ClearForm">
+                        @(editing ? "Скасувати" : "Очистити")
+                    </button>
+                </div>
+            </form>
+        </div>
+        <div class="admin-list">
+            @if (qualityAndAssurances.Count == 0)
+            {
+                <div class="admin-empty">Елементів ще немає.</div>
+            }
+            else
+            {
+                @foreach (var qa in qualityAndAssurances)
+                {
+                    <div class="card card-interactive event-card" @onclick="() => StartEdit(qa)">
+                        <div class="item-card-header">
+                            <div class="item-card-title">@qa.Tittle</div>
+                        </div>
+                        <div class="w-100p">
+                            <div class="item-card-meta-row">
+                                <span class="item-card-meta-label">Id</span>
+                                <span>@(string.IsNullOrWhiteSpace(qa.Id.ToString()) ? "Помилка" : qa.Id.ToString())</span>
+                            </div>
+                            <div class="item-card-meta-row">
+                                <span class="item-card-meta-markdown markdown-body">@((MarkupString)ToHtml(qa.AssuranceMarkdown))</span>
+                            </div>
+                        </div>
+                        <button class="button button-red w-100p" @onclick="() => Delete(qa.Id.ToString())">Видалити</button>
+                    </div>
+                }
+            }
+        </div>
+    </div>
+    
+</div>
+
+@code {
+    private List<QualityAndAssurance> qualityAndAssurances = new();
+    private string? currentUserId = string.Empty;
+    private string searchTerm = string.Empty;
+    private string title = string.Empty;
+    private bool hasTitleError = false;
+    private string titleError = string.Empty;
+    private string answer = string.Empty;
+    private bool hasAnswerError = false;
+    private string answerError = string.Empty;
+    private string editingId = string.Empty;
+    private bool editing = false;
+
+    private static readonly MarkdownPipeline MarkdownPipeline = new MarkdownPipelineBuilder()
+        .UsePipeTables()
+        .Build();
+
+    protected override void OnInitialized()
+    {
+        GlobalStorageService.OnTokenChanged += OnTokenChanged;
+    }
+
+    private async void OnTokenChanged()
+    {
+        currentUserId = GlobalStorageService.UserId;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    public void Dispose()
+    {
+        GlobalStorageService.OnTokenChanged -= OnTokenChanged;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        qualityAndAssurances = (await QualityAndAssuranceService.GetAllAsync()).ToList();
+    }
+
+    private void ClearForm()
+    {
+        editingId = string.Empty;
+        title = string.Empty;
+        answer = string.Empty;
+        hasTitleError = false;
+        titleError = string.Empty;
+        hasAnswerError = false;
+        answerError = string.Empty;
+        editing = false;
+        StateHasChanged();
+    }
+
+    private async Task Save()
+    {
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            hasTitleError = true;
+            titleError = "Запитання не може бути порожнім.";
+        }
+        else if (title.Length < 5)
+        {
+            hasTitleError = true;
+            titleError = "Запитання має бути не менше 5 символів.";
+        }
+        else
+        {
+            hasTitleError = false;
+            titleError = string.Empty;
+        }
+
+        if (string.IsNullOrWhiteSpace(answer))
+        {
+            hasAnswerError = true;
+            answerError = "Відповідь не може бути порожньою.";
+        }
+        else if (answer.Length < 10)
+        {
+            hasAnswerError = true;
+            answerError = "Відповідь має бути не менше 10 символів.";
+        }
+        else
+        {
+            hasAnswerError = false;
+            answerError = string.Empty;
+        }
+
+        if (hasAnswerError || hasTitleError) return;
+
+        if (editing)
+        {
+            Console.WriteLine("Редагування");
+            if (Guid.TryParse(editingId, out var qaId))
+            {
+                var existingQa = qualityAndAssurances.FirstOrDefault(q => q.Id == qaId);
+                if (existingQa != null)
+                {
+                    existingQa.Tittle = title;
+                    existingQa.AssuranceMarkdown = answer;
+                    await QualityAndAssuranceService.UpdateAsync(existingQa);
+                    ClearForm();
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+        }
+        else
+        {
+            Console.WriteLine("Додавання");
+            var newEvent = new QualityAndAssurance
+            {
+                Id = Guid.NewGuid(),
+                Tittle = title,
+                AssuranceMarkdown = answer
+            };
+            await QualityAndAssuranceService.AddAsync(newEvent);
+            qualityAndAssurances = (await QualityAndAssuranceService.GetAllAsync()).ToList();
+            ClearForm();
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task Search()
+    {
+        if (!string.IsNullOrWhiteSpace(searchTerm) && searchTerm.Length >= 3)
+        {
+            qualityAndAssurances = _mapper.Map<List<QualityAndAssurance>>(await QualityAndAssuranceService.SearchAsync(searchTerm));
+        }
+        else
+        {
+            qualityAndAssurances = (await QualityAndAssuranceService.GetAllAsync()).ToList();
+        }
+
+        StateHasChanged();
+    }
+
+    private async Task Delete(string qaId)
+    {
+        await QualityAndAssuranceService.DeleteAsync(qaId);
+        qualityAndAssurances = (await QualityAndAssuranceService.GetAllAsync()).ToList();
+        StateHasChanged();
+    }
+
+    private void StartEdit(QualityAndAssurance qa)
+    {
+        editingId = qa.Id.ToString();
+        title = qa.Tittle;
+        answer = qa.AssuranceMarkdown;
+        editing = true;
+        StateHasChanged();
+    }
+
+    private static string ToHtml(string? markdown)
+    {
+        return Markdown.ToHtml(markdown ?? string.Empty, MarkdownPipeline);
+    }
+
+    private static string GetFieldClass(bool hasError)
+        => hasError ? "input-invalid" : string.Empty;
+}

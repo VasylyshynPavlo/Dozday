@@ -1,49 +1,57 @@
-﻿using Dozday.Core.Interfaces;
+﻿using Dozday.Core.Enums;
+using Dozday.Core.Interfaces;
 using Dozday.Core.Models;
 using Microsoft.EntityFrameworkCore;
 using System.Linq.Expressions;
 
 namespace Dozday.Data.Repositories;
 
-public class UserRepository(DozdayDbContext context) : IUserRepository
+public class UserRepository(IDbContextFactory<DozdayDbContext> contextFactory) : IUserRepository
 {
-    private readonly DozdayDbContext _context = context;
+    private readonly IDbContextFactory<DozdayDbContext> _contextFactory = contextFactory;
 
     public async Task AddAsync(User entity)
     {
-        await _context.AddAsync(entity);
-        await _context.SaveChangesAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        await context.AddAsync(entity);
+        await context.SaveChangesAsync();
     }
 
     public async Task AddRangeAsync(IEnumerable<User> entities)
     {
-        await _context.AddRangeAsync(entities);
-        await _context.SaveChangesAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        await context.AddRangeAsync(entities);
+        await context.SaveChangesAsync();
     }
 
     public async Task<int> DeleteAsync(Guid id)
     {
-        return await _context.Users.Where(u => u.Id == id).ExecuteDeleteAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        return await context.Users.Where(u => u.Id == id).ExecuteDeleteAsync();
     }
 
     public async Task<int> DeleteRangeByEmailAsync(string email)
     {
-        return await _context.Users.Where(u => u.Email == email).ExecuteDeleteAsync();
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        return await context.Users.Where(u => u.Email == email).ExecuteDeleteAsync();
     }
 
     public async Task<User?> GetByEmailAsync(string email)
     {
-        return await _context.Users.FirstOrDefaultAsync(u => u.Email == email);
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        return await context.Users.FirstOrDefaultAsync(u => u.Email == email);
     }
 
     public async Task<User?> GetByIdAsync(Guid id)
     {
-        return await _context.Users.FirstOrDefaultAsync(u => u.Id == id);
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        return await context.Users.FirstOrDefaultAsync(u => u.Id == id);
     }
 
     public async Task<User?> GetByNameAsync(string name)
     {
-        return await _context.Users.FirstOrDefaultAsync(u => u.FullName == name);
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        return await context.Users.FirstOrDefaultAsync(u => u.FullName == name);
     }
 
     public async Task<PagedResult<TResult>> GetUsersAsync<TResult>(
@@ -52,7 +60,8 @@ public class UserRepository(DozdayDbContext context) : IUserRepository
         int page = 1, int pageSize = 10,
         Dictionary<string, bool>? orderBy = null)
     {
-        var query = _context.Users.AsNoTracking();
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var query = context.Users.AsNoTracking();
 
         query = query.Where(predicate);
 
@@ -81,11 +90,21 @@ public class UserRepository(DozdayDbContext context) : IUserRepository
             query = query.OrderBy(u => u.FullName);
         }
 
-        var items = await query
-            .Select(selector)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .ToListAsync();
+        List<TResult> items;
+        if (page == -1 && pageSize == -1)
+        {
+            items = await query
+                .Select(selector)
+                .ToListAsync();
+        }
+        else
+        {
+            items = await query
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .Select(selector)
+                .ToListAsync();
+        }
 
         return new PagedResult<TResult>
         {
@@ -97,14 +116,32 @@ public class UserRepository(DozdayDbContext context) : IUserRepository
         };
     }
 
+    public async Task<bool> IsAdmin(Guid id)
+    {
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var query = context.Users.AsNoTracking().Where(u => u.Id == id);
+        var item = await query.FirstOrDefaultAsync();
+        return item?.Role.HasFlag(UserRoles.Administrator) ?? false;
+    }
+
     public async Task<int> UpdateAsync(User entity)
     {
-        var count = await _context.Users.Where(u => u.Id == entity.Id).ExecuteUpdateAsync(u => u
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        var count = await context.Users.Where(u => u.Id == entity.Id).ExecuteUpdateAsync(u => u
             .SetProperty(p => p.FullName, entity.FullName)
             .SetProperty(p => p.Email, entity.Email)
             .SetProperty(p => p.Role, entity.Role)
-            .SetProperty(p => p.AvatarUrl, entity.AvatarUrl));
-        await _context.SaveChangesAsync();
+            .SetProperty(p => p.AvatarUrl, entity.AvatarUrl)
+            .SetProperty(p => p.Banned, entity.Banned));
+        await context.SaveChangesAsync();
         return count;
+    }
+
+    public async Task<IEnumerable<User>> SearchAsync(string text)
+    {
+        await using var context = await _contextFactory.CreateDbContextAsync();
+        return await context.Users
+            .Where(u => u.FullName.Contains(text) || u.Email.Contains(text) || u.Id.ToString().Contains(text))
+            .ToListAsync();
     }
 }

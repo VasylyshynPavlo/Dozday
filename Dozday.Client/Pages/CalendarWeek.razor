@@ -1,7 +1,12 @@
 @using System.Globalization
+@using Dozday.Core.DTOs
 @using Dozday.Core.Enums
-@using Microsoft.AspNetCore.Components
 @using Dozday.Core.Models
+@using Dozday.Core.Utils
+@using Microsoft.AspNetCore.Components
+@using System.Net.Http.Headers
+@using System.Net.Http.Json
+@inject HttpClient Http
 @inject IJSRuntime JS
 @implements IDisposable
 
@@ -69,12 +74,16 @@
             <div class="event-details" style="@GetEventDetailsStyle(selectedEventView)" @onclick:stopPropagation="true">
                 <button type="button" class="event-details__close" @onclick="CloseEventDetails">✕</button>
                 <h3 class="event-details__title">@selectedEventView.Event.Summary</h3>
+                @if (!string.IsNullOrWhiteSpace(selectedEventView.Event.OrganizatorName))
+                {
+                    <div class="event-details__row"><strong>Викладач:</strong> @selectedEventView.Event.OrganizatorName</div>
+                }
                 <div class="event-details__row"><strong>Формат:</strong> @GetEventTypeLabel(selectedEventView.Event.Type)</div>
                 <div class="event-details__row"><strong>Початок:</strong> @selectedEventView.Event.Start.ToString("dd.MM.yyyy HH:mm", culture)</div>
                 <div class="event-details__row"><strong>Кінець:</strong> @selectedEventView.Event.End.ToString("dd.MM.yyyy HH:mm", culture)</div>
-                @if (!string.IsNullOrWhiteSpace(selectedEventView.Event.Loacation))
+                @if (!string.IsNullOrWhiteSpace(selectedEventView.Event.Location))
                 {
-                    <div class="event-details__row"><strong>Локація:</strong> @selectedEventView.Event.Loacation</div>
+                    <div class="event-details__row"><strong>Локація:</strong> @selectedEventView.Event.Location</div>
                 }
                 @if (!string.IsNullOrWhiteSpace(selectedEventView.Event.Description))
                 {
@@ -84,6 +93,11 @@
                 {
                     <div class="event-details__row"><a href="@selectedEventView.Event.MeetingLink" target="_blank" rel="noopener noreferrer">Посилання на зустріч</a></div>
                 }
+                <div class="event-details__row"><strong>Планують прийти: </strong> @selectedEventView.Event.Subscribers</div>
+                <button type="button" class="event-details-button" @onclick="ToggleEventSubscriptionAsync" disabled="@isSubscriptionLoading">
+                    @(isSubscribed ? "Не планую прийти" : "Планую прийти")
+                </button>
+                <div class="event-details__row" style="opacity: 0.5; font-size: 10px; bottom: -5px; position: absolute; font-style: italic;"><strong>Ідентифікатор:</strong> @selectedEventView.Event.Id</div>
             </div>
         </div>
     }
@@ -102,45 +116,10 @@
     private const int TimeGridStartRow = 3;
     private const int BottomBufferRow = 843;
 
-    private readonly Event event1 = new()
-    {
-        Id = Guid.Parse("9e640732-2a8d-4b23-8ead-a86563eed34e"),
-        Summary = "Ранкова зустріч 1",
-        Start = new DateTime(2026, 4, 15, 8, 0, 0),
-        End = new DateTime(2026, 4, 15, 9, 20, 0),
-        OrganizatorId = Guid.NewGuid(),
-        Description = "Опис події 1",
-        Loacation = "Локація 1",
-        MeetingLink = "https://example.com/meeting1",
-        Type = EventType.Offline
-    };
-    private readonly Event event2 = new()
-    {
-        Id = Guid.Parse("19111419-04eb-4462-856a-5e4685933d98"),
-        Summary = "Ранкова зустріч 2",
-        Start = new DateTime(2026, 4, 15, 8, 0, 0),
-        End = new DateTime(2026, 4, 16, 10, 20, 0),
-        OrganizatorId = Guid.NewGuid(),
-        Description = "Опис події 2",
-        Loacation = "Локація 2",
-        MeetingLink = "https://example.com/meeting2",
-        Type = EventType.Online
-    };
-    private readonly Event event3 = new()
-    {
-        Id = Guid.Parse("62bbc838-39c9-4aa4-88fc-2db2ecb6e6f0"),
-        Summary = "Довга подія на 2 дні",
-        Start = new DateTime(2026, 4, 16, 20, 0, 0),
-        End = new DateTime(2026, 4, 17, 10, 30, 0),
-        OrganizatorId = Guid.NewGuid(),
-        Description = "Опис події 3",
-        Loacation = "Локація 3",
-        MeetingLink = "https://example.com/meeting3",
-        Type = EventType.Hybrid
-    };
-    private readonly List<Event> events = [];
     private readonly List<WeekEventView> weekEventViews = [];
     private WeekEventView? selectedEventView;
+    private bool isSubscribed;
+    private bool isSubscriptionLoading;
     private int? currentTimeRow;
     private int? currentTimeColumnStart;
     private PeriodicTimer? timeTicker;
@@ -150,10 +129,6 @@
     
     protected override void OnInitialized()
     {
-        events.Add(event1);
-        events.Add(event2);
-        events.Add(event3);
-
         BuildWeekEventViews();
         UpdateCurrentTimeIndicator();
         _ = StartTimeTickerAsync();
@@ -189,6 +164,9 @@
     [Parameter]
     public DateOnly WeekStart { get; set; }
 
+    [Parameter]
+    public IReadOnlyList<EventDto> Events { get; set; } = [];
+
     private void BuildWeekEventViews()
     {
         weekEventViews.Clear();
@@ -201,7 +179,7 @@
             daySlices[i] = [];
         }
 
-        foreach (var calendarEvent in events)
+        foreach (var calendarEvent in Events)
         {
             if (calendarEvent.End <= calendarEvent.Start)
             {
@@ -361,32 +339,22 @@
             var eventRowStart = TimeGridStartRow + slice.StartMinute;
             var eventRowEnd = TimeGridStartRow + slice.EndMinute;
 
+            var colors = CalendarEventUtils.GetEventColors(slice.Event);
+
             weekEventViews.Add(new WeekEventView(
                 slice.Event,
                 slice.Event.Summary,
                 $"{FormatMinuteText(slice.StartMinute)} • {FormatMinuteText(slice.EndMinute)}",
                 BuildEventStyle(slice.Event, eventColumnStart, eventColumnEnd, eventRowStart, eventRowEnd),
-                BuildEventAccentColor(slice.Event),
-                BuildEventBorderColor(slice.Event),
-                BuildEventTextColor(slice.Event)));
+                colors.BackgroundColor,
+                colors.BorderColor,
+                colors.TextColor));
         }
     }
 
-    private static string GetEventTypeIcon(EventType type) => type switch
-    {
-        EventType.Online => "🌐",
-        EventType.Offline => "📍",
-        EventType.Hybrid => "🔀",
-        _ => "📅"
-    };
+    private static string GetEventTypeIcon(EventType type) => CalendarEventUtils.GetEventTypeIcon(type);
 
-    private static string GetEventTypeLabel(EventType type) => type switch
-    {
-        EventType.Online => "Онлайн",
-        EventType.Offline => "Очно",
-        EventType.Hybrid => "Онлайн + Очно",
-        _ => "None"
-    };
+    private static string GetEventTypeLabel(EventType type) => CalendarEventUtils.GetEventTypeLabel(type);
 
     private static string FormatMinuteText(int minute)
     {
@@ -398,11 +366,14 @@
     private void OpenEventDetails(WeekEventView viewEvent)
     {
         selectedEventView = viewEvent;
+        _ = LoadSubscriptionStatusAsync();
     }
 
     private void CloseEventDetails()
     {
         selectedEventView = null;
+        isSubscribed = false;
+        isSubscriptionLoading = false;
     }
 
     private bool IsWeekend(DateOnly day)
@@ -465,86 +436,98 @@
         timeTickerCts?.Dispose();
     }
 
-    private static string BuildEventStyle(Event calendarEvent, int columnStart, int columnEnd, int rowStart, int rowEnd)
+    private static string BuildEventStyle(EventDto calendarEvent, int columnStart, int columnEnd, int rowStart, int rowEnd)
     {
-        var hash = calendarEvent.Id != Guid.Empty
-            ? calendarEvent.Id.GetHashCode()
-            : HashCode.Combine(calendarEvent.Summary, calendarEvent.Start, calendarEvent.End);
-        if (hash == int.MinValue)
-        {
-            hash = int.MaxValue;
-        }
-
-        var baseHue = Math.Abs(hash) % 360;
-        var backgroundHue = baseHue;
-        var borderHue = (baseHue + 18) % 360;
-        var textHue = (baseHue + 30) % 360;
-
         return $"grid-column: {columnStart} / {columnEnd}; " +
                $"grid-row: {rowStart} / {rowEnd}; " +
-               $"background-color: hsl({backgroundHue} 85% 93%); " +
-               $"border-left-color: hsl({borderHue} 70% 45%); " +
-               $"color: hsl({textHue} 70% 22%);";
-    }
-
-    private static string BuildEventAccentColor(Event calendarEvent)
-    {
-        var hash = calendarEvent.Id != Guid.Empty
-            ? calendarEvent.Id.GetHashCode()
-            : HashCode.Combine(calendarEvent.Summary, calendarEvent.Start, calendarEvent.End);
-
-        if (hash == int.MinValue)
-        {
-            hash = int.MaxValue;
-        }
-
-        var baseHue = Math.Abs(hash) % 360;
-        return $"hsl({baseHue} 85% 93%)";
-    }
-
-    private static string BuildEventBorderColor(Event calendarEvent)
-    {
-        var hash = calendarEvent.Id != Guid.Empty
-            ? calendarEvent.Id.GetHashCode()
-            : HashCode.Combine(calendarEvent.Summary, calendarEvent.Start, calendarEvent.End);
-
-        if (hash == int.MinValue)
-        {
-            hash = int.MaxValue;
-        }
-
-        var baseHue = Math.Abs(hash) % 360;
-        return $"hsl({(baseHue + 18) % 360} 70% 45%)";
-    }
-
-    private static string BuildEventTextColor(Event calendarEvent)
-    {
-        var hash = calendarEvent.Id != Guid.Empty
-            ? calendarEvent.Id.GetHashCode()
-            : HashCode.Combine(calendarEvent.Summary, calendarEvent.Start, calendarEvent.End);
-
-        if (hash == int.MinValue)
-        {
-            hash = int.MaxValue;
-        }
-
-        var baseHue = Math.Abs(hash) % 360;
-        return $"hsl({(baseHue + 30) % 360} 70% 22%)";
+               CalendarEventUtils.BuildEventColorStyle(calendarEvent);
     }
 
     private static string GetEventDetailsStyle(WeekEventView viewEvent)
     {
-        return $"border-top: 6px solid {viewEvent.BorderColor}; background-color: {viewEvent.BackgroundColor}; color: {viewEvent.TextColor};";
+        return CalendarEventUtils.BuildEventDetailsStyle(viewEvent.Event);
+    }
+
+    private async Task LoadSubscriptionStatusAsync()
+    {
+        if (selectedEventView is null)
+        {
+            return;
+        }
+
+        isSubscriptionLoading = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var token = await JS.InvokeAsync<string?>("auth.getToken");
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                isSubscribed = false;
+                return;
+            }
+
+            Http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            var response = await Http.GetAsync($"api/UserEventSubscription/status?eventId={Uri.EscapeDataString(selectedEventView.Event.Id)}");
+            if (!response.IsSuccessStatusCode)
+            {
+                isSubscribed = false;
+                return;
+            }
+
+            var result = await response.Content.ReadFromJsonAsync<bool>();
+            isSubscribed = result;
+        }
+        finally
+        {
+            isSubscriptionLoading = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task ToggleEventSubscriptionAsync()
+    {
+        if (selectedEventView is null)
+        {
+            return;
+        }
+
+        isSubscriptionLoading = true;
+        await InvokeAsync(StateHasChanged);
+
+        try
+        {
+            var token = await JS.InvokeAsync<string?>("auth.getToken");
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                return;
+            }
+
+            Http.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+            var response = await Http.PostAsync($"api/UserEventSubscription/toggle?eventId={Uri.EscapeDataString(selectedEventView.Event.Id)}", null);
+            if (!response.IsSuccessStatusCode)
+            {
+                return;
+            }
+
+            var result = await response.Content.ReadFromJsonAsync<bool>();
+            isSubscribed = result;
+        }
+        finally
+        {
+            isSubscriptionLoading = false;
+            await InvokeAsync(StateHasChanged);
+        }
     }
 
     private sealed class EventSlice(
-        Event eventItem,
+        EventDto eventItem,
         int startMinute,
         int endMinute,
         bool continuesFromPreviousDay,
         bool continuesToNextDay)
     {
-        public Event Event { get; } = eventItem;
+        public EventDto Event { get; } = eventItem;
         public int StartMinute { get; } = startMinute;
         public int EndMinute { get; } = endMinute;
         public bool ContinuesFromPreviousDay { get; } = continuesFromPreviousDay;
@@ -553,7 +536,7 @@
     }
 
     private sealed record WeekEventView(
-        Event Event,
+        EventDto Event,
         string Title,
         string TimeText,
         string Style,

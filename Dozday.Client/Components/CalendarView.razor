@@ -1,0 +1,214 @@
+@using System.Globalization
+@using Dozday.Client.Pages
+@using Dozday.Core.DTOs
+@using Dozday.Core.Models
+@using Microsoft.AspNetCore.Components
+
+<div class="calendar__panel">
+    <div class="calendar__toolbar">
+        <div class="button-group">
+            <button class="button" @onclick="NavigatePreviousAsync">&#8592;</button>
+            <button class="button" @onclick="NavigateNextAsync">&#8594;</button>
+        </div>
+        <div class="calendar__title">@CalendarTitle</div>
+        <button class="button calendar__menu-toggle" @onclick="ToggleControlsMenu" aria-expanded="@isControlsMenuOpen" aria-label="Меню керування">☰</button>
+        <div class="calendar__actions @(isControlsMenuOpen ? "calendar__actions--open" : string.Empty)">
+            <button class="button" @onclick="GoToTodayAsync">Сьогодні</button>
+            <div class="button-group">
+                <button class="button flex-1" @onclick="() => SetCalendarModeAsync(0)" disabled="@(calendarMode == 0 ? true : null)">День</button>
+                <button class="button flex-1" @onclick="() => SetCalendarModeAsync(1)" disabled="@(calendarMode == 1 ? true : null)">Тиждень</button>
+                <button class="button flex-1" @onclick="() => SetCalendarModeAsync(2)" disabled="@(calendarMode == 2 ? true : null)">Місяць</button>
+            </div>
+        </div>
+    </div>
+    <div class="calendar__content">
+        @switch (calendarMode)
+        {
+            case 0:
+                <CalendarDay Day="selectedDay" Events="Events" />
+                break;
+            case 1:
+                <CalendarWeek WeekStart="selectedWeekStart" Events="Events" />
+                break;
+            case 2:
+                <CalendarMonth Month="selectedMonth" Events="Events" />
+                break;
+        }
+    </div>
+</div>
+
+@code {
+    private int calendarMode = 1;
+    private readonly DateOnly now = DateOnly.FromDateTime(DateTime.Now);
+    private readonly CultureInfo culture = new("uk-UA");
+    private DateOnly selectedDay;
+    private DateOnly selectedWeekStart;
+    private DateOnly selectedWeekEnd;
+    private DateOnly selectedMonth;
+    private bool isControlsMenuOpen;
+
+    [Parameter]
+    public IReadOnlyList<EventDto> Events { get; set; } = [];
+
+    [Parameter]
+    public EventCallback<CalendarRange> OnRangeChanged { get; set; }
+
+    private string CalendarTitle
+    {
+        get
+        {
+            return calendarMode switch
+            {
+                0 => selectedDay.ToString("dddd dd, MMMM yyyy", culture),
+                1 => GetWeekTitle(),
+                _ => $"{selectedMonth.ToString("MMMM", culture)}, {selectedMonth.Year}"
+            };
+        }
+    }
+
+    protected override void OnInitialized()
+    {
+        selectedDay = now;
+        selectedWeekStart = GetWeekStart(now);
+        selectedWeekEnd = selectedWeekStart.AddDays(6);
+        selectedMonth = new DateOnly(now.Year, now.Month, 1);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        await NotifyRangeChangedAsync();
+    }
+
+    private async Task SetCalendarModeAsync(int mode)
+    {
+        calendarMode = mode;
+        isControlsMenuOpen = false;
+        await NotifyRangeChangedAsync();
+    }
+
+    private void ToggleControlsMenu()
+    {
+        isControlsMenuOpen = !isControlsMenuOpen;
+    }
+
+    private async Task GoToTodayAsync()
+    {
+        var today = DateOnly.FromDateTime(DateTime.Now);
+
+        switch (calendarMode)
+        {
+            case 0:
+                selectedDay = today;
+                break;
+            case 1:
+                selectedWeekStart = GetWeekStart(today);
+                selectedWeekEnd = selectedWeekStart.AddDays(6);
+                break;
+            case 2:
+                selectedMonth = new DateOnly(today.Year, today.Month, 1);
+                break;
+        }
+
+        isControlsMenuOpen = false;
+        await NotifyRangeChangedAsync();
+    }
+
+    private async Task NavigatePreviousAsync()
+    {
+        switch (calendarMode)
+        {
+            case 0:
+                selectedDay = selectedDay.AddDays(-1);
+                break;
+            case 1:
+                selectedWeekStart = selectedWeekStart.AddDays(-7);
+                selectedWeekEnd = selectedWeekStart.AddDays(6);
+                break;
+            case 2:
+                selectedMonth = selectedMonth.AddMonths(-1);
+                break;
+        }
+
+        await NotifyRangeChangedAsync();
+    }
+
+    private async Task NavigateNextAsync()
+    {
+        switch (calendarMode)
+        {
+            case 0:
+                selectedDay = selectedDay.AddDays(1);
+                break;
+            case 1:
+                selectedWeekStart = selectedWeekStart.AddDays(7);
+                selectedWeekEnd = selectedWeekStart.AddDays(6);
+                break;
+            case 2:
+                selectedMonth = selectedMonth.AddMonths(1);
+                break;
+        }
+
+        await NotifyRangeChangedAsync();
+    }
+
+    private string GetWeekTitle()
+    {
+        var monthPart = selectedWeekStart.Month == selectedWeekEnd.Month && selectedWeekStart.Year == selectedWeekEnd.Year
+            ? selectedWeekStart.ToString("MMMM", culture)
+            : $"{selectedWeekStart.ToString("MMMM", culture)}-{selectedWeekEnd.ToString("MMMM", culture)}";
+
+        var yearPart = selectedWeekStart.Year == selectedWeekEnd.Year
+            ? selectedWeekStart.Year.ToString(CultureInfo.InvariantCulture)
+            : $"{selectedWeekStart.Year.ToString(CultureInfo.InvariantCulture)}-{selectedWeekEnd.Year.ToString(CultureInfo.InvariantCulture)}";
+
+        return $"{monthPart}, {yearPart}";
+    }
+
+    private static DateOnly GetWeekStart(DateOnly date)
+    {
+        var diff = (7 + (date.DayOfWeek - DayOfWeek.Monday)) % 7;
+        return date.AddDays(-diff);
+    }
+
+    private static DateOnly GetWeekEnd(DateOnly date)
+    {
+        var diff = (7 - (date.DayOfWeek - DayOfWeek.Monday)) % 7;
+        return date.AddDays(diff == 0 ? 6 : diff - 1);
+    }
+
+    private async Task NotifyRangeChangedAsync()
+    {
+        if (!OnRangeChanged.HasDelegate)
+        {
+            return;
+        }
+
+        var (from, to) = GetActiveRange();
+        await OnRangeChanged.InvokeAsync(new CalendarRange(from, to));
+    }
+
+    private (DateTime from, DateTime to) GetActiveRange()
+    {
+        return calendarMode switch
+        {
+            0 => (selectedDay.ToDateTime(new TimeOnly(0, 0)), selectedDay.AddDays(1).ToDateTime(new TimeOnly(0, 0))),
+            1 => (selectedWeekStart.ToDateTime(new TimeOnly(0, 0)), selectedWeekEnd.AddDays(1).ToDateTime(new TimeOnly(0, 0))),
+            _ => GetMonthRange()
+        };
+    }
+
+    private (DateTime from, DateTime to) GetMonthRange()
+    {
+        var monthStart = new DateOnly(selectedMonth.Year, selectedMonth.Month, 1);
+        var monthEnd = monthStart.AddMonths(1).AddDays(-1);
+        var gridStart = GetWeekStart(monthStart);
+        var gridEnd = GetWeekEnd(monthEnd);
+
+        return (gridStart.ToDateTime(new TimeOnly(0, 0)), gridEnd.AddDays(1).ToDateTime(new TimeOnly(0, 0)));
+    }
+}
